@@ -9,7 +9,6 @@ import { SOPsSection } from './components/SOPsSection';
 import { TasksSection } from './components/TasksSection';
 import { HistorySection } from './components/HistorySection';
 import { AdminSection } from './components/AdminSection';
-import { AIAssistantSection } from './components/AIAssistantSection';
 import {
   Sparkles,
   BookOpen,
@@ -18,13 +17,12 @@ import {
   Camera,
   Shield,
   HelpCircle,
-  Bot,
 } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => StorageService.getCurrentUser());
   const [language, setLanguage] = useState<Language>(() => StorageService.getLanguage());
-  const [currentTab, setCurrentTab] = useState<'training' | 'assistant' | 'sops' | 'tasks' | 'history' | 'admin'>('training');
+  const [currentTab, setCurrentTab] = useState<'training' | 'sops' | 'tasks' | 'history' | 'admin'>('training');
   
   const [users, setUsers] = useState<User[]>(() => StorageService.getUsers());
   const [guides, setGuides] = useState<VisualGuide[]>(() => StorageService.getVisualGuides());
@@ -107,12 +105,6 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'assistant' && (
-          <AIAssistantSection
-            currentUser={currentUser}
-            language={language}
-          />
-        )}
 
         {currentTab === 'sops' && (
           <SOPsSection
@@ -152,22 +144,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating AI Coach Button (Visible when not on Assistant tab) */}
-      {currentTab !== 'assistant' && (
-        <button
-          onClick={() => setCurrentTab('assistant')}
-          className="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-30 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-extrabold px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center gap-2 cursor-pointer border-2 border-white group animate-bounce-subtle"
-          title="Open AI Trainer Bhaiya"
-        >
-          <div className="w-7 h-7 rounded-full bg-slate-950 text-white flex items-center justify-center">
-            <Bot className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-          </div>
-          <span className="text-xs sm:text-sm font-black whitespace-nowrap">
-            {language === 'hi' ? 'AI ट्रेनर भैया से पूछें' : 'Ask AI Trainer'}
-          </span>
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-        </button>
-      )}
+
 
       {/* Mobile Bottom Navigation Bar (Smartphones & Tablets) */}
       <MobileBottomNav

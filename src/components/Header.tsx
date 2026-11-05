@@ -4,8 +4,8 @@ import { speechService } from '../services/speechService';
 import { VolumeX, UserCheck, Shield, Globe, LogOut, CheckCircle2 } from 'lucide-react';
 
 interface HeaderProps {
-  currentTab: 'training' | 'assistant' | 'sops' | 'tasks' | 'history' | 'admin';
-  setCurrentTab: (tab: 'training' | 'assistant' | 'sops' | 'tasks' | 'history' | 'admin') => void;
+  currentTab: 'training' | 'sops' | 'tasks' | 'history' | 'admin';
+  setCurrentTab: (tab: 'training' | 'sops' | 'tasks' | 'history' | 'admin') => void;
   currentUser: User | null;
   onOpenLogin: () => void;
   language: Language;
@@ -37,12 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
       labelHi: 'फोटो गाइड्स',
       labelEn: 'Photo Guides',
       badge: null,
-    },
-    {
-      id: 'assistant' as const,
-      labelHi: 'AI सहायक',
-      labelEn: 'AI Assistant',
-      badge: 'AI',
     },
     {
       id: 'sops' as const,

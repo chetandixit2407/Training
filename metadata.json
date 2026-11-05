@@ -1,6 +1,6 @@
 {
   "name": "Office Operations & Pantry Boy Training App",
   "description": "Mobile-first photo-based training, SOPs, and daily task management system for office pantry boys and operations staff with Hindi & English voice instructions.",
-  "requestFramePermissions": ["microphone"],
+  "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

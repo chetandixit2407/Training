@@ -1,10 +1,10 @@
 import React from 'react';
-import { BookOpen, FileCheck, CheckSquare, Camera, Shield, Bot } from 'lucide-react';
+import { BookOpen, FileCheck, CheckSquare, Camera, Shield } from 'lucide-react';
 import { Language } from '../types';
 
 interface MobileBottomNavProps {
-  currentTab: 'training' | 'assistant' | 'sops' | 'tasks' | 'history' | 'admin';
-  setCurrentTab: (tab: 'training' | 'assistant' | 'sops' | 'tasks' | 'history' | 'admin') => void;
+  currentTab: 'training' | 'sops' | 'tasks' | 'history' | 'admin';
+  setCurrentTab: (tab: 'training' | 'sops' | 'tasks' | 'history' | 'admin') => void;
   language: Language;
   pendingTasksCount: number;
 }
@@ -22,13 +22,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       labelEn: 'Guides',
       icon: BookOpen,
       badge: null,
-    },
-    {
-      id: 'assistant' as const,
-      labelHi: 'AI भैया',
-      labelEn: 'AI Coach',
-      icon: Bot,
-      badge: 'AI',
     },
     {
       id: 'sops' as const,

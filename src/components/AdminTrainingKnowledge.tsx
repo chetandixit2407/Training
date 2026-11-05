@@ -186,10 +186,22 @@ export const AdminTrainingKnowledge: React.FC<AdminTrainingKnowledgeProps> = ({
       const dataUrl = await fileToDataUrl(file, 1400);
       setUploadedPhotoUrl(dataUrl);
       setErrorMessage(null);
+
+      // Save permanently to server backend disk storage
+      const res = await AITrainingService.uploadReferencePhoto({
+        photoBase64: dataUrl,
+        category: selectedCategory,
+        roomName: selectedRoomName,
+        user: currentUser,
+      });
+      if (res && res.photoUrl) {
+        setUploadedPhotoUrl(res.photoUrl);
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to process selected image file.');
     }
   };
+
 
   // Run Gemini Multimodal Vision Analysis (Requirement 1)
   const handleRunVisionAnalysis = async () => {

@@ -5,6 +5,8 @@ import {
   DEFAULT_SOPS,
   DEFAULT_DAILY_TASKS,
 } from '../data/defaultData';
+import { AITrainingService } from './aiTrainingService';
+
 
 const STORAGE_KEYS = {
   USERS: 'office_train_users_v4',
@@ -123,12 +125,32 @@ if (typeof window !== 'undefined') {
 }
 
 export const StorageService = {
-  // Initialization function to ensure preloaded photo sync
+  // Initialization function to ensure preloaded photo sync from server backend and IndexedDB
   async init(): Promise<void> {
+    try {
+      // 1. Fetch server-persisted reference photos and approved knowledge
+      const knowledge = await AITrainingService.getApprovedKnowledge();
+      if (Array.isArray(knowledge) && knowledge.length > 0) {
+        knowledge.forEach((k) => {
+          if (k.referencePhotoUrl) {
+            photoMemoryCache[`guide_photo_guide-${k.category}`] = k.referencePhotoUrl;
+            photoMemoryCache[`guide_photo_${k.category}`] = k.referencePhotoUrl;
+          }
+          if (k.incorrectPhotoUrl) {
+            photoMemoryCache[`guide_inc_guide-${k.category}`] = k.incorrectPhotoUrl;
+            photoMemoryCache[`guide_inc_${k.category}`] = k.incorrectPhotoUrl;
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Backend knowledge sync notice:', e);
+    }
+
     const photos = await PhotoStorageDB.getAllPhotos();
     Object.assign(photoMemoryCache, photos);
     broadcastUpdate('all');
   },
+
 
   // Real-time subscription across components and tabs
   subscribe(callback: (type?: string) => void): () => void {

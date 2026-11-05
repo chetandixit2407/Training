@@ -29,14 +29,23 @@ const ai = new GoogleGenAI({
   },
 });
 
-// Path to persistent training knowledge database
+// Path to persistent training knowledge database and permanent photo uploads
 const DATA_DIR = path.join(__dirname, 'data');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'training_knowledge.json');
+const GUIDES_FILE = path.join(DATA_DIR, 'guides.json');
 
-// Ensure data directory exists
+// Ensure data and uploads directories exist
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Statically serve permanently uploaded reference photos
+app.use('/uploads', express.static(UPLOADS_DIR));
+
 
 // Initial seed data representing approved office training knowledge
 const DEFAULT_KNOWLEDGE = [
@@ -422,6 +431,49 @@ function saveKnowledgeBase(records: any[]): void {
   }
 }
 
+// Helper to save base64 image data to permanent file on disk
+function saveBase64Image(base64Data: string, prefix = 'ref'): string {
+  if (!base64Data) return '';
+  if (!base64Data.startsWith('data:image/')) {
+    return base64Data; // Already a URL or static path
+  }
+  try {
+    const match = base64Data.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (!match) return base64Data;
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1].replace('+xml', '') || 'jpg';
+    const rawBase64 = match[2];
+    const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${safePrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+    const filePath = path.join(UPLOADS_DIR, filename);
+    fs.writeFileSync(filePath, Buffer.from(rawBase64, 'base64'));
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.error('Error saving base64 image to disk:', err);
+    return base64Data;
+  }
+}
+
+// Helpers for persistent visual guides
+function loadGuides(): any[] {
+  try {
+    if (fs.existsSync(GUIDES_FILE)) {
+      const data = fs.readFileSync(GUIDES_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading guides:', err);
+  }
+  return [];
+}
+
+function saveGuides(guides: any[]): void {
+  try {
+    fs.writeFileSync(GUIDES_FILE, JSON.stringify(guides, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving guides:', err);
+  }
+}
+
 // STRICT ADMIN AUTHENTICATION MIDDLEWARE (Requirement 4)
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const userRole = (req.headers['x-user-role'] || req.body?.userRole) as string;
@@ -439,6 +491,155 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 // ==========================================
 // API ENDPOINTS
 // ==========================================
+
+// PHOTO MANAGEMENT (Requirement 2: Permanent Reference Photo Upload & Delete)
+app.post('/api/photos/upload', requireAdmin, (req, res) => {
+  try {
+    const { photoBase64, category, roomName, photoType = 'reference' } = req.body;
+    if (!photoBase64) {
+      return res.status(400).json({ error: 'Photo base64 data is required for upload.' });
+    }
+
+    const safeCat = category || 'general';
+    const permanentUrl = saveBase64Image(photoBase64, `${photoType}_${safeCat}`);
+
+    // Update knowledge database record if category exists
+    const records = loadKnowledgeBase();
+    let target = records.find((r) => r.category === safeCat);
+    const now = new Date().toISOString();
+
+    if (target) {
+      if (photoType === 'incorrect') {
+        target.incorrectPhotoUrl = permanentUrl;
+      } else {
+        target.referencePhotoUrl = permanentUrl;
+      }
+      target.updatedAt = now;
+      saveKnowledgeBase(records);
+    } else if (safeCat !== 'general') {
+      // Create draft record
+      target = {
+        id: `knowledge-${safeCat}`,
+        category: safeCat,
+        roomNameHi: roomName || safeCat.toUpperCase(),
+        roomNameEn: roomName || safeCat.toUpperCase(),
+        referencePhotoUrl: photoType === 'reference' ? permanentUrl : '',
+        incorrectPhotoUrl: photoType === 'incorrect' ? permanentUrl : undefined,
+        currentVersion: 1,
+        status: 'approved',
+        approvedBy: req.body?.adminName || 'Admin',
+        approvedAt: now,
+        titleHi: `${roomName || safeCat} मानक`,
+        titleEn: `${roomName || safeCat} Standard`,
+        summaryHi: '',
+        summaryEn: '',
+        steps: [],
+        cleaningProcedureHi: '',
+        cleaningProcedureEn: '',
+        expectedResultsHi: '',
+        expectedResultsEn: '',
+        qualityStandardsHi: [],
+        qualityStandardsEn: [],
+        mistakesToAvoidHi: [],
+        mistakesToAvoidEn: [],
+        voiceScriptHi: '',
+        voiceScriptEn: '',
+        versions: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      records.push(target);
+      saveKnowledgeBase(records);
+    }
+
+    // Sync guides.json
+    const guides = loadGuides();
+    const guide = guides.find((g: any) => g.category === safeCat);
+    if (guide) {
+      if (photoType === 'incorrect') {
+        guide.incorrectPhotoUrl = permanentUrl;
+      } else {
+        guide.photoUrl = permanentUrl;
+      }
+      guide.updatedAt = now;
+      saveGuides(guides);
+    }
+
+    res.json({
+      success: true,
+      message: 'Reference photo permanently saved on server!',
+      photoUrl: permanentUrl,
+      record: target,
+    });
+  } catch (err: any) {
+    console.error('Error uploading reference photo:', err);
+    res.status(500).json({ error: err.message || 'Failed to save reference photo' });
+  }
+});
+
+// DELETE ROOM REFERENCE PHOTO (Admin only)
+app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
+  try {
+    const { category } = req.params;
+    const { photoType = 'reference' } = req.body || {};
+    const now = new Date().toISOString();
+
+    const records = loadKnowledgeBase();
+    const target = records.find((r) => r.category === category);
+    if (target) {
+      if (photoType === 'incorrect') {
+        target.incorrectPhotoUrl = undefined;
+      } else {
+        target.referencePhotoUrl = '';
+      }
+      target.updatedAt = now;
+      saveKnowledgeBase(records);
+    }
+
+    const guides = loadGuides();
+    const guide = guides.find((g: any) => g.category === category);
+    if (guide) {
+      if (photoType === 'incorrect') {
+        guide.incorrectPhotoUrl = undefined;
+      } else {
+        guide.photoUrl = '';
+      }
+      guide.updatedAt = now;
+      saveGuides(guides);
+    }
+
+    res.json({ success: true, message: 'Reference photo deleted successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete photo' });
+  }
+});
+
+// GET & UPDATE VISUAL GUIDES
+app.get('/api/guides', (req, res) => {
+  const guides = loadGuides();
+  res.json({ success: true, data: guides });
+});
+
+app.post('/api/guides/update', requireAdmin, (req, res) => {
+  try {
+    const guide = req.body;
+    if (!guide || !guide.id) {
+      return res.status(400).json({ error: 'Valid guide object required' });
+    }
+    const guides = loadGuides();
+    const idx = guides.findIndex((g: any) => g.id === guide.id);
+    if (idx !== -1) {
+      guides[idx] = { ...guides[idx], ...guide, updatedAt: new Date().toISOString() };
+    } else {
+      guides.push({ ...guide, updatedAt: new Date().toISOString() });
+    }
+    saveGuides(guides);
+    res.json({ success: true, data: guides[idx !== -1 ? idx : guides.length - 1] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update guide' });
+  }
+});
+
 
 // 1. GET ALL APPROVED TRAINING KNOWLEDGE (Public to all roles)
 app.get('/api/training/knowledge', (req, res) => {
@@ -473,7 +674,8 @@ app.post('/api/training/knowledge/approve', requireAdmin, (req, res) => {
       category,
       roomNameHi,
       roomNameEn,
-      referencePhotoUrl,
+      referencePhotoUrl: rawRefPhoto,
+      incorrectPhotoUrl: rawIncPhoto,
       titleHi,
       titleEn,
       summaryHi,
@@ -493,15 +695,20 @@ app.post('/api/training/knowledge/approve', requireAdmin, (req, res) => {
       changeNote,
     } = req.body;
 
-    if (!titleHi || !category || !referencePhotoUrl) {
+    if (!titleHi || !category || !rawRefPhoto) {
       return res.status(400).json({ error: 'Missing required fields: titleHi, category, and referencePhotoUrl are mandatory.' });
     }
+
+    // Permanently save base64 photo to server disk if uploaded
+    const referencePhotoUrl = saveBase64Image(rawRefPhoto, `ref_${category}`);
+    const incorrectPhotoUrl = rawIncPhoto ? saveBase64Image(rawIncPhoto, `inc_${category}`) : undefined;
 
     const records = loadKnowledgeBase();
     const existingIndex = records.findIndex((r) => r.id === id || (r.category === category && id?.includes(category)));
 
     const now = new Date().toISOString();
     const approvedByName = adminName || 'Admin (Office Manager)';
+
 
     if (existingIndex !== -1) {
       const existing = records[existingIndex];
@@ -920,130 +1127,7 @@ Your job:
   }
 });
 
-// 8. HUMAN-LIKE CONVERSATIONAL TRAINING ASSISTANT (Requirement 2 & 5 - Open to Pantry Boys & Admin)
-app.post('/api/ai/chat', async (req, res) => {
-  try {
-    const { messages, currentLanguage, userRole, currentRoomHint, pantryBoyName } = req.body;
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'Messages array is required.' });
-    }
-
-    // Pull current approved knowledge to ground the AI (Requirement 5)
-    const knowledgeRecords = loadKnowledgeBase();
-
-    // Prepare concise grounded knowledge string
-    const groundedKnowledgeSummary = knowledgeRecords
-      .map((k) => {
-        return `
-=== ROOM/TOPIC: ${k.roomNameEn} (${k.titleHi}) ===
-Category: ${k.category}
-Summary: ${k.summaryHi} / ${k.summaryEn}
-Key Steps:
-${(k.steps || []).map((s: any) => `  ${s.stepNumber}. ${s.instructionHi} (${s.instructionEn})`).join('\n')}
-Quality Standards:
-${(k.qualityStandardsHi || []).map((q: string) => `  * ${q}`).join('\n')}
-Mistakes to Avoid:
-${(k.mistakesToAvoidHi || []).map((m: string) => `  ! ${m}`).join('\n')}
-Voice Guideline: ${k.voiceScriptHi}
-`;
-      })
-      .join('\n');
-
-    const lastUserMessage = messages[messages.length - 1]?.text || '';
-
-    const systemInstruction = `
-You are "ट्रेनर भैया" (Trainer Bhaiya), an intelligent, highly supportive, polite, and experienced Office Operations & Pantry Supervisor.
-You are talking to a Pantry Boy named ${pantryBoyName || 'भैया'} (User Role: ${userRole || 'pantry_boy'}).
-
-CRITICAL RULES:
-1. UNDERSTAND ANY LANGUAGE / ACCENT / SLANG:
-   - User may speak in pure Hindi, casual Hinglish (e.g. "meeting room ready kaise karein?", "Lalit sir ke yahan paani kahan rakhna hai?"), English, or broken/incomplete sentences ("aur AC?", "uske baad?", "paani kitna?").
-   - You must automatically detect the user's language and respond naturally in the SAME language style! If they ask in Hinglish, reply in warm natural Hinglish with polite Hindi words. If they ask in pure Hindi, reply in clear polite Hindi.
-2. TONE & MANNER:
-   - Speak like a friendly senior brother / supervisor face-to-face: use polite words like "भैया", "जी", "कर दीजिए", "रखिए", "ध्यान रखिएगा".
-   - Short sentences, clear, easy to understand. Avoid bookish/robotic words.
-   - Give practical, actionable advice.
-3. STRICT FACTUAL GROUNDING:
-   - Answer strictly using the official office training knowledge base provided below.
-   - AC temperatures: Lalit Sir cabin is 23°C-24°C, Skyline is 23°C (15 mins early), Community is 23°C (20 mins early), Reception is 24°C.
-   - Knock twice before entering Lalit Sir's cabin; never touch files on his desk; serve water/tea from the right corner on leather coaster.
-   - Always invert clean glasses on coasters; never place condensation-wet bottles directly on wood.
-   - Never invent cleaning chemicals or office rules that are not in the guidelines. If unsure, politely ask them to check with Admin.
-4. RESPONSE FORMAT:
-   - Return clean text that sounds great when spoken aloud.
-   - Keep answers focused (2 to 4 clear steps or points).
-   - Suggest 2 short follow-up questions they might want to ask next.
-
-OFFICIAL APPROVED KNOWLEDGE BASE:
-${groundedKnowledgeSummary}
-`;
-
-    // Construct history for multi-turn chat
-    const chatContents = messages.map((m: any) => ({
-      role: m.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: m.text }],
-    }));
-
-    let response;
-    const modelConfig = {
-      systemInstruction,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          replyText: {
-            type: Type.STRING,
-            description: 'The natural conversational reply to the pantry boy in the matching language (Hindi/Hinglish/English).',
-          },
-          audioSpokenText: {
-            type: Type.STRING,
-            description: 'Clean spoken version for text-to-speech with natural pronunciation and conversational pacing.',
-          },
-          languageDetected: {
-            type: Type.STRING,
-            enum: ['hi', 'hinglish', 'en'],
-          },
-          referencedRooms: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: 'List of room category names relevant to this answer, e.g. ["reception", "lalit_sir_cabin"].',
-          },
-          followUpSuggestions: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: '2 to 3 short practical follow-up question chips the user can tap.',
-          },
-        },
-        required: ['replyText', 'audioSpokenText', 'languageDetected', 'referencedRooms', 'followUpSuggestions'],
-      },
-    };
-
-    try {
-      response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: chatContents,
-        config: modelConfig,
-      });
-    } catch (primaryErr: any) {
-      console.warn('gemini-3.8-flash busy, falling back to gemini-3.1-flash-lite:', primaryErr?.message);
-      response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: chatContents,
-        config: modelConfig,
-      });
-    }
-
-    const parsed = JSON.parse(response.text || '{}');
-    res.json({
-      success: true,
-      data: parsed,
-    });
-  } catch (err: any) {
-    console.error('Error in AI Assistant chat:', err);
-    res.status(500).json({ error: err.message || 'AI Assistant is temporarily busy. Please try again.' });
-  }
-});
 
 // 9. SPEECH SYNTHESIS HELPERS FOR GEMINI AUDIO (24kHz WAV & Raw PCM)
 
@@ -1094,35 +1178,34 @@ function generateFallbackAudibleWav(text: string, sampleRate = 24000): string {
   return Buffer.concat([header, pcmBuffer]).toString('base64');
 }
 
-// Grounded fallback answer generator based on approved office knowledge
-function getGroundedFallbackReply(queryText: string): string {
-  const q = (queryText || '').toLowerCase();
-  if (q.includes('ललित') || q.includes('lalit') || q.includes('कैबिन') || q.includes('cabin')) {
-    return 'भैया, ललित सर के कैबिन में जाने से पहले हमेशा दो बार नॉक करें। रिवॉल्विंग कुर्सी को बीच में सीधा रखें, दो विजिटर कुर्सियां बराबर रखें, और टेबल के दाएं कोने पर लेदर कोस्टर पर ढका हुआ पानी का जग और उल्टा गिलास रखें। फाइलों को बिल्कुल हाथ न लगाएं।';
-  }
-  if (q.includes('स्काईलाइन') || q.includes('skyline')) {
-    return 'भैया, द स्काईलाइन मीटिंग रूम में चारों कुर्सियों को टेबल के नीचे सीधा अंदर धकेलें, हर सीट पर कोस्टर और उल्टा गिलास रखें, और मीटिंग से 15 मिनट पहले एसी 23 डिग्री पर ऑन करें।';
-  }
-  if (q.includes('कम्युनिटी') || q.includes('community') || q.includes('कॉन्फ्रेंस') || q.includes('बोर्ड')) {
-    return 'भैया, द कम्युनिटी बड़ा मीटिंग रूम है। दोनों तरफ 5-5 कुर्सियां सीधी कतार में रखें, सभी 10 सीटों पर कोस्टर व उल्टा गिलास रखें और मीटिंग से 20 मिनट पहले एसी ऑन कर दें।';
-  }
-  if (q.includes('रिसेप्शन') || q.includes('reception') || q.includes('विजिटर') || q.includes('सोफा')) {
-    return 'भैया, रिसेप्शन में सोफे के सभी कुशन 45 डिग्री पर फूले हुए रखें, सेंटर टेबल पर कोस्टर में पानी की सीलबंद बोतल रखें और मेहमान के जाते ही टेबल को तुरंत पोंछ दें।';
-  }
-  return 'भैया, ऑफिस के सभी नियमों का ध्यान रखें। कुर्सियों को हमेशा टेबल के नीचे सीधा रखें, पानी हमेशा कोस्टर और उल्टे गिलास के साथ परोसें और एसी 23 डिग्री पर चालू करें।';
-}
 
-// Generate real speech audio using Gemini 3.8 Flash Lite TTS model with resilient fallback
-async function generateGeminiSpeech(text: string, voiceName = 'Kore'): Promise<{ audio: string; mimeType: string; sampleRate: number }> {
+// Circuit-breaker to avoid hammering TTS endpoint when quota limit (10 RPD on free tier) is active
+let ttsCooldownUntil = 0;
+
+// Generate speech audio using Gemini 3.8 Flash Lite TTS model with resilient circuit-breaker and fallback
+async function generateGeminiSpeech(text: string, voiceName = 'Kore'): Promise<{ audio: string; mimeType: string; sampleRate: number; isFallback: boolean; text: string }> {
   const cleanText = text.trim();
   if (!cleanText) {
     throw new Error('Empty text provided for speech synthesis');
   }
 
+  // If in cooldown due to previous quota limit, immediately return resilient audible fallback
+  if (Date.now() < ttsCooldownUntil) {
+    const fallbackBase64 = generateFallbackAudibleWav(cleanText);
+    return {
+      audio: fallbackBase64,
+      mimeType: 'audio/wav',
+      sampleRate: 24000,
+      isFallback: true,
+      text: cleanText,
+    };
+  }
+
   try {
     let timer: any;
+    // 6000ms timeout for TTS call
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('TTS timeout')), 800);
+      timer = setTimeout(() => reject(new Error('TTS timeout')), 6000);
     });
 
     const ttsCall = ai.models.generateContent({
@@ -1158,16 +1241,26 @@ async function generateGeminiSpeech(text: string, voiceName = 'Kore'): Promise<{
         audio: base64Audio,
         mimeType: mimeType,
         sampleRate: 24000,
+        isFallback: false,
+        text: cleanText,
       };
     }
     throw new Error('Gemini TTS candidate did not contain inline audio data');
   } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('Quota exceeded')) {
+      // Set cooldown for 65 minutes to prevent hammering the exhausted endpoint
+      ttsCooldownUntil = Date.now() + 65 * 60 * 1000;
+    }
+
     // Produce immediate resilient 24kHz WAV audio with vocal harmonic formants
     const fallbackBase64 = generateFallbackAudibleWav(cleanText);
     return {
       audio: fallbackBase64,
       mimeType: 'audio/wav',
       sampleRate: 24000,
+      isFallback: true,
+      text: cleanText,
     };
   }
 }
@@ -1186,6 +1279,8 @@ app.post('/api/ai/synthesize-speech', async (req, res) => {
       audio: result.audio,
       mimeType: result.mimeType,
       sampleRate: result.sampleRate,
+      isFallback: result.isFallback,
+      text: result.text,
     });
   } catch (err: any) {
     console.error('Error in /api/ai/synthesize-speech:', err);
@@ -1193,190 +1288,10 @@ app.post('/api/ai/synthesize-speech', async (req, res) => {
   }
 });
 
-// 11. REAL-TIME STREAMING CONVERSATIONAL ASSISTANT WITH AUDIO CHUNKS
-app.post('/api/ai/chat-stream', async (req, res) => {
-  try {
-    const { messages, userRole, pantryBoyName } = req.body;
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'Messages array is required.' });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders?.();
-
-    // Pull current approved knowledge to ground the AI
-    const knowledgeRecords = loadKnowledgeBase();
-    const groundedKnowledgeSummary = knowledgeRecords
-      .map((k) => `=== ${k.roomNameEn} (${k.titleHi}) ===\nSummary: ${k.summaryHi}\nSteps:\n${(k.steps || []).map((s: any) => ` ${s.stepNumber}. ${s.instructionHi}`).join('\n')}\nStandards: ${(k.qualityStandardsHi || []).join('; ')}\nMistakes: ${(k.mistakesToAvoidHi || []).join('; ')}\nVoice Script: ${k.voiceScriptHi}`)
-      .join('\n\n');
-
-    const systemInstruction = `
-You are "ट्रेनर भैया" (Trainer Bhaiya), an intelligent, highly supportive, polite, and experienced Office Operations & Pantry Supervisor speaking with a Pantry Boy named ${pantryBoyName || 'भैया'} (User Role: ${userRole || 'pantry_boy'}).
-
-CRITICAL RULES FOR REAL-TIME CONVERSATIONAL VOICE:
-1. Speak directly in 1 to 3 short, conversational, crystal-clear sentences. No bullet points, no markdown formatting, no robotic jargon.
-2. If the user asks in Hindi or Hinglish, answer in warm conversational Hindi/Hinglish starting with "भैया..." (e.g. "भैया, ललित सर के कैबिन में जाने से पहले दो बार नॉक करें और पानी हमेशा टेबल के दाएं कोने पर लेदर कोस्टर में रखें।"). If they speak in English, reply in friendly simple English.
-3. STRICT FACTUAL GROUNDING:
-   - AC temps: Lalit Sir cabin is 23°C-24°C, Skyline is 23°C (15 mins early), Community is 23°C (20 mins early), Reception is 24°C.
-   - Knock twice before entering Lalit Sir's cabin; never touch files on his desk; serve water/tea from the right corner on leather coaster.
-   - Always invert clean glasses on coasters; never place condensation-wet bottles directly on wood.
-4. Keep the response punchy, practical, and natural for immediate text-to-speech spoken delivery.
-
-OFFICIAL APPROVED KNOWLEDGE BASE:
-${groundedKnowledgeSummary}
-`;
-
-    const chatContents = messages.map((m: any) => ({
-      role: (m.sender === 'user' || m.role === 'user') ? 'user' : 'model',
-      parts: [{ text: m.text || m.content || '' }],
-    }));
-
-    let isClientClosed = false;
-    res.on('close', () => {
-      if (!res.writableEnded) {
-        isClientClosed = true;
-      }
-    });
-
-    res.write(': sse-start\n\n');
-
-    const lastUserText = messages[messages.length - 1]?.text || messages[messages.length - 1]?.content || '';
-    let didStreamChunks = false;
-    let sentenceBuffer = '';
-    const sentenceDelimiters = /[।!?\n]/;
-
-    const pendingAudioPromises: Promise<any>[] = [];
-
-    const queueSentenceAudio = (sentence: string) => {
-      const audioPromise = generateGeminiSpeech(sentence)
-        .then((audioResult) => {
-          if (!isClientClosed) {
-            res.write(`data: ${JSON.stringify({
-              type: 'audio',
-              audio: audioResult.audio,
-              mimeType: audioResult.mimeType,
-              sampleRate: audioResult.sampleRate,
-              sentence: sentence,
-            })}\n\n`);
-          }
-        })
-        .catch((err) => {
-          console.warn('Sentence audio promise error:', err);
-        });
-      pendingAudioPromises.push(audioPromise);
-    };
-
-    try {
-      let timer: any;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Model timeout')), 2500);
-      });
-
-      const modelCall = ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: chatContents,
-        config: {
-          systemInstruction,
-        },
-      }).catch((err) => {
-        clearTimeout(timer);
-        throw err;
-      });
-
-      const response = await Promise.race([modelCall, timeoutPromise]);
-      clearTimeout(timer);
-
-      const replyText = response.text || '';
-      if (replyText.trim().length > 0) {
-        didStreamChunks = true;
-        const words = replyText.split(' ');
-        for (let i = 0; i < words.length; i++) {
-          if (isClientClosed) break;
-          const wordChunk = words[i] + (i < words.length - 1 ? ' ' : '');
-          sentenceBuffer += wordChunk;
-          res.write(`data: ${JSON.stringify({ type: 'text', text: wordChunk })}\n\n`);
-
-          const delimiterMatch = sentenceBuffer.search(sentenceDelimiters);
-          if (delimiterMatch !== -1) {
-            const completeSentence = sentenceBuffer.slice(0, delimiterMatch + 1).trim();
-            sentenceBuffer = sentenceBuffer.slice(delimiterMatch + 1);
-
-            if (completeSentence.length > 2) {
-              queueSentenceAudio(completeSentence);
-            }
-          }
-        }
-      }
-    } catch (modelErr: any) {
-      console.warn('Gemini chat notice (streaming grounded answer):', modelErr?.message);
-    }
-
-    // If model did not yield chunks within timeout, immediately stream grounded fallback
-    if (!didStreamChunks && !isClientClosed) {
-      const fallbackReply = getGroundedFallbackReply(lastUserText);
-      const words = fallbackReply.split(' ');
-      for (const word of words) {
-        if (isClientClosed) break;
-        res.write(`data: ${JSON.stringify({ type: 'text', text: word + ' ' })}\n\n`);
-      }
-      queueSentenceAudio(fallbackReply);
-    } else if (!isClientClosed && sentenceBuffer.trim().length > 0) {
-      queueSentenceAudio(sentenceBuffer.trim());
-    }
-
-    // Wait for all queued audio chunks to finish transmitting before ending stream
-    try {
-      await Promise.all(pendingAudioPromises);
-    } catch (e) {
-      // ignore
-    }
-
-    if (!isClientClosed) {
-      res.write(`data: [DONE]\n\n`);
-      res.end();
-    }
-  } catch (err: any) {
-    console.error('Error in AI Assistant stream:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: err.message || 'Stream generation failed' });
-    } else {
-      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-      res.end();
-    }
-  }
-});
-
 
 // Vite middleware integration (Dev Mode vs Production Mode)
 async function startServer() {
   const server = http.createServer(app);
-
-  // Mount real-time WebSocket bridge for Gemini Live audio / duplex streaming
-  const wss = new WebSocketServer({ server, path: '/api/live' });
-
-  wss.on('connection', (ws) => {
-    ws.on('message', async (data) => {
-      try {
-        const parsed = JSON.parse(data.toString());
-        if (parsed.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong' }));
-        } else if (parsed.text) {
-          const audioResult = await generateGeminiSpeech(parsed.text);
-          ws.send(JSON.stringify({
-            type: 'audio',
-            audio: audioResult.audio,
-            mimeType: audioResult.mimeType,
-            sampleRate: audioResult.sampleRate,
-          }));
-        }
-      } catch (err) {
-        console.error('WebSocket live message error:', err);
-      }
-    });
-  });
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer } = await import('vite');

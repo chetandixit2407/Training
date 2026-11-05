@@ -211,42 +211,67 @@ export const AITrainingService = {
   },
 
   /**
-   * CONVERSATIONAL AI ASSISTANT: Ask questions grounded in approved office knowledge.
-   * Open to both Pantry Boys and Admins.
+   * ADMIN ONLY: Permanently upload a reference or incorrect photo to backend server storage.
    */
-  async chatWithAssistant(params: {
-    messages: AIMessage[];
-    currentLanguage?: string;
+  async uploadReferencePhoto(params: {
+    photoBase64: string;
+    category: string;
+    roomName?: string;
+    photoType?: 'reference' | 'incorrect';
     user?: User | null;
-    currentRoomHint?: string;
-  }): Promise<{
-    replyText: string;
-    audioSpokenText: string;
-    languageDetected: 'hi' | 'hinglish' | 'en';
-    referencedRooms: string[];
-    followUpSuggestions: string[];
-  }> {
-    const res = await fetch('/api/ai/chat', {
+  }): Promise<{ success: boolean; photoUrl: string; message: string; record?: TrainingKnowledgeRecord }> {
+    const res = await fetch('/api/photos/upload', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: getAuthHeaders(params.user),
       body: JSON.stringify({
-        messages: params.messages,
-        currentLanguage: params.currentLanguage || 'hi',
-        userRole: params.user?.role || 'pantry_boy',
-        pantryBoyName: params.user?.name || 'भैया',
-        currentRoomHint: params.currentRoomHint,
+        photoBase64: params.photoBase64,
+        category: params.category,
+        roomName: params.roomName,
+        photoType: params.photoType || 'reference',
+        userRole: params.user?.role,
+        userId: params.user?.id,
+        adminName: params.user?.name,
       }),
     });
 
-    if (!res.ok) {
-      const errorJson = await res.json().catch(() => ({}));
-      throw new Error(errorJson.error || `AI Assistant chat failed: ${res.statusText}`);
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin accounts can upload reference photos.');
     }
 
-    const json = await res.json();
-    return json.data;
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error || `Photo upload failed: ${res.statusText}`);
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Delete a room reference photo from backend storage.
+   */
+  async deleteReferencePhoto(params: {
+    category: string;
+    photoType?: 'reference' | 'incorrect';
+    user?: User | null;
+  }): Promise<void> {
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(params.category)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(params.user),
+      body: JSON.stringify({
+        photoType: params.photoType || 'reference',
+        userRole: params.user?.role,
+        userId: params.user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can delete reference photos.');
+    }
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error || `Failed to delete photo: ${res.statusText}`);
+    }
   },
 
   /**
@@ -256,7 +281,7 @@ export const AITrainingService = {
     text: string,
     lang = 'hi',
     voiceName?: string
-  ): Promise<{ audio: string; mimeType: string; sampleRate: number }> {
+  ): Promise<{ audio: string; mimeType: string; sampleRate: number; isFallback?: boolean; text?: string }> {
     const res = await fetch('/api/ai/synthesize-speech', {
       method: 'POST',
       headers: {
@@ -271,101 +296,6 @@ export const AITrainingService = {
 
     const data = await res.json();
     return data;
-  },
-
-  /**
-   * REAL-TIME STREAMING: Streams conversational AI reply tokens chunk-by-chunk for sub-second voice latency.
-   * Calls onChunk(chunkText) as words arrive, onAudioChunk(audioData) as Gemini audio arrives, and onDone(fullText) when complete.
-   * Supports AbortSignal for instantaneous barge-in interruptions!
-   */
-  async streamChatWithAssistant(params: {
-    messages: AIMessage[];
-    user?: User | null;
-    signal?: AbortSignal;
-    onChunk: (chunk: string) => void;
-    onAudioChunk?: (chunk: { audio: string; mimeType: string; sampleRate: number; sentence?: string }) => void;
-    onDone: (fullText: string) => void;
-    onError?: (err: Error) => void;
-  }): Promise<void> {
-    try {
-      const res = await fetch('/api/ai/chat-stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: params.messages,
-          userRole: params.user?.role || 'pantry_boy',
-          pantryBoyName: params.user?.name || 'भैया',
-        }),
-        signal: params.signal,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Streaming failed: ${res.statusText}`);
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        throw new Error('ReadableStream not supported on response.');
-      }
-
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-      let fullText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          const dataStr = trimmed.replace('data: ', '').trim();
-          if (dataStr === '[DONE]') {
-            params.onDone(fullText);
-            return;
-          }
-          try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.error) {
-              throw new Error(parsed.error);
-            }
-            if (parsed.type === 'audio' && parsed.audio) {
-              if (params.onAudioChunk) {
-                params.onAudioChunk({
-                  audio: parsed.audio,
-                  mimeType: parsed.mimeType || 'audio/wav',
-                  sampleRate: parsed.sampleRate || 24000,
-                  sentence: parsed.sentence,
-                });
-              }
-            } else if (parsed.text) {
-              fullText += parsed.text;
-              params.onChunk(parsed.text);
-            }
-          } catch (e) {
-            // ignore non-json tick
-          }
-        }
-      }
-
-      params.onDone(fullText);
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // User barged in and interrupted; cleanly exit
-        return;
-      }
-      if (params.onError) {
-        params.onError(err);
-      } else {
-        console.error('Error streaming chat:', err);
-      }
-    }
   },
 };
 
