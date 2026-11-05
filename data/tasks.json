@@ -1,0 +1,31 @@
+[
+  {
+    "id": "test-task-1",
+    "title": "Morning Reception Cleaning",
+    "roomName": "Reception Area",
+    "status": "completed",
+    "completedAt": "2026-11-05T08:19:26.956Z",
+    "completedByUserId": "pb-101",
+    "completedByUserName": "Ramesh Kumar",
+    "afterPhotoUrl": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png",
+    "proofPhotos": [
+      {
+        "id": "proof_test-task-1_1793866766957_1_mf0n",
+        "taskId": "test-task-1",
+        "taskTitle": "Morning Reception Cleaning",
+        "roomName": "Reception Area",
+        "url": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png",
+        "fileName": "task_test-task-1_comp_2_1793866766956_dexg.png",
+        "uploadedAt": "2026-11-05T08:19:26.956Z",
+        "expiresAt": "2026-12-15T08:19:26.956Z",
+        "pantryBoyId": "pb-101",
+        "pantryBoyName": "Ramesh Kumar",
+        "angleLabel": "Angle 2: Visitor Sofa",
+        "caption": "",
+        "retentionDays": 40
+      }
+    ],
+    "notes": "Table polished, 2 fresh bottles kept, cushions aligned",
+    "proofPhotoUrl": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png"
+  }
+]

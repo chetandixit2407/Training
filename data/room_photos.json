@@ -1,0 +1,168 @@
+{
+  "prestige_loft": [
+    {
+      "id": "photo_prestige_1",
+      "url": "/src/assets/images/office_reception_lounge_1793614168526.jpg",
+      "captionHi": "2 सोफे, 45° फूले हुए कुशन व सेंटर टेबल व्यवस्था",
+      "captionEn": "2 sofas, 45° plumped cushions & center table setup",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "the_skyline": [
+    {
+      "id": "photo_skyline_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "द स्काईलाइन: 8-सीटर कॉन्फ्रेंस टेबल व पानी की बोतलें",
+      "captionEn": "The Skyline: 8-seater conference table & fresh water setup",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "the_community": [
+    {
+      "id": "photo_community_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "द कम्युनिटी: 10 कुर्सियां एक सीध में व स्टेशनरी पैड",
+      "captionEn": "The Community: 10 chairs aligned with stationery pads",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "the_summit": [
+    {
+      "id": "photo_summit_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "द समिट: बोर्डरूम कुर्सियां व एचडीएमआई केबल बॉक्स",
+      "captionEn": "The Summit: Boardroom seating & HDMI cable console",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "wcr_air": [
+    {
+      "id": "photo_wcrair_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "डब्ल्यूसीआर एयर: क्विक-मीट राउंड टेबल व 4 कुर्सियां",
+      "captionEn": "WCR Air: Quick-meet table and 4 aligned chairs",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "elegance_suite": [
+    {
+      "id": "photo_elegance_1",
+      "url": "/src/assets/images/office_cabin_desk_1793614184873.jpg",
+      "captionHi": "एलिगेंस सुइट: सीनियर मैनेजर डेस्क व विज़िटर कुर्सियां",
+      "captionEn": "Elegance Suite: Senior manager desk and visitor chairs",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "prime_loft": [
+    {
+      "id": "photo_primeloft_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "प्राइम लॉफ्ट: 6 कुर्सियां व टीवी प्रेजेंटेशन सेटअप",
+      "captionEn": "Prime Loft: 6 chairs and TV presentation setup",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "regency": [
+    {
+      "id": "photo_regency_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "रीजेंसी: वीआईपी डिस्कशन टेबल, लेदर कुर्सियां",
+      "captionEn": "Regency: VIP discussion table, executive chairs",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "lalit_sir_cabin": [
+    {
+      "id": "photo_lalitsir_1",
+      "url": "/src/assets/images/office_cabin_desk_1793614184873.jpg",
+      "captionHi": "ललित सर डेस्क: राइट लेदर कोस्टर पर पानी व उल्टा गिलास",
+      "captionEn": "Lalit Sir desk: Right leather coaster with carafe & inverted glass",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "reception": [
+    {
+      "id": "photo_reception_1",
+      "url": "/src/assets/images/office_reception_lounge_1793614168526.jpg",
+      "captionHi": "रिसेप्शन लाउंज: विजिटर सोफा, कुशन 45° व विजिटर डायरी",
+      "captionEn": "Reception lounge: Visitor sofa, 45° cushions & guest directory",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_reception_uploaded_live",
+      "url": "/uploads/reference_reception_1793860755498_awl5.jpg",
+      "captionHi": "एडमिन द्वारा अपलोड किया गया वास्तविक रिसेप्शन संदर्भ फोटो",
+      "captionEn": "Actual office reception reference photo uploaded by Admin",
+      "uploadedAt": "2026-11-04T12:00:00Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "pantry": [
+    {
+      "id": "photo_pantry_1",
+      "url": "/src/assets/images/office_pantry_setup_1793614167563.jpg",
+      "captionHi": "पैंट्री काउंटर: कॉफी वेंडिंग मशीन, ट्रे व कप रैक सफाई",
+      "captionEn": "Pantry counter: Coffee machine, trays & clean cup rack",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "lights_equipment": [
+    {
+      "id": "photo_lights_1",
+      "url": "/src/assets/images/office_switchboard_lights_1793614186214.jpg",
+      "captionHi": "स्विच बोर्ड मार्किंग, एसी रिमोट व लाइटिंग कंट्रोल",
+      "captionEn": "Switchboard labels, AC remote & lighting control panel",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ],
+  "workstations": [
+    {
+      "id": "photo_workstations_1",
+      "url": "/src/assets/images/office_meeting_room_1793614169917.jpg",
+      "captionHi": "वर्कस्टेशन बे: साफ डेस्क, सीधी कुर्सियां व खाली डस्टबिन",
+      "captionEn": "Workstation bay: Clean desks, aligned chairs & empty bins",
+      "uploadedAt": "2026-11-02T08:30:00Z",
+      "uploadedBy": "Admin (System)",
+      "isPrimary": true,
+      "photoType": "reference"
+    }
+  ]
+}

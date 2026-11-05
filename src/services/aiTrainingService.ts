@@ -4,6 +4,8 @@ import {
   User,
   RoomPhotoItem,
   AIRoomAnalysis,
+  CompletionPhotoItem,
+  DailyTask,
 } from '../types';
 
 /**
@@ -462,6 +464,176 @@ export const AITrainingService = {
 
     const data = await res.json();
     return data;
+  },
+
+  /**
+   * PANTRY BOY TASK COMPLETION: Submit completion proof with multiple photos.
+   * Stored in /data/uploads/completion/ with exact timestamp, user identity, and 40-day retention.
+   */
+  async completeTaskWithPhotos(params: {
+    taskId: string;
+    taskTitle: string;
+    roomName: string;
+    user?: User | null;
+    notes?: string;
+    beforePhotoBase64?: string;
+    completionPhotos: Array<{ photoBase64: string; angleLabel?: string; caption?: string }>;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    task: DailyTask;
+    proofPhotos: CompletionPhotoItem[];
+    uploadedAt: string;
+    expiresAt: string;
+    retentionDays: number;
+  }> {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(params.taskId)}/complete`, {
+      method: 'POST',
+      headers: getAuthHeaders(params.user),
+      body: JSON.stringify({
+        pantryBoyId: params.user?.id || 'pantry_user',
+        pantryBoyName: params.user?.name || 'Pantry Boy',
+        taskTitle: params.taskTitle,
+        roomName: params.roomName,
+        notes: params.notes,
+        beforePhotoBase64: params.beforePhotoBase64,
+        completionPhotos: params.completionPhotos,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to complete task with proof photos');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * QUERY ALL ACTIVE COMPLETION PHOTOS (Subject to 40-day retention)
+   */
+  async getCompletionPhotos(params?: {
+    taskId?: string;
+    pantryBoyId?: string;
+    roomName?: string;
+  }): Promise<CompletionPhotoItem[]> {
+    try {
+      const query = new URLSearchParams();
+      if (params?.taskId) query.set('taskId', params.taskId);
+      if (params?.pantryBoyId) query.set('pantryBoyId', params.pantryBoyId);
+      if (params?.roomName) query.set('roomName', params.roomName);
+
+      const res = await fetch(`/api/completion-photos?${query.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch completion photos');
+      const data = await res.json();
+      return data.photos || [];
+    } catch (err) {
+      console.warn('Error fetching completion photos:', err);
+      return [];
+    }
+  },
+
+  /**
+   * GET 40-DAY RETENTION AUDIT STATUS (For Admin inspection)
+   */
+  async getRetentionStatus(): Promise<{
+    success: boolean;
+    retentionPolicyDays: number;
+    totalDatabaseRecords: number;
+    diskFilesCount: number;
+    diskUsageFormatted: string;
+    storageDirectory: string;
+    referenceStorageDirectory: string;
+    nextExpiringPhoto?: any;
+    serverTime: string;
+  }> {
+    const res = await fetch('/api/completion-photos/retention-status');
+    if (!res.ok) throw new Error('Failed to fetch retention status');
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Trigger immediate manual cleanup of expired photos
+   */
+  async triggerManualCleanup(user?: User | null): Promise<{
+    success: boolean;
+    message: string;
+    result: { deletedCount: number; remainingCount: number; deletedFiles: string[] };
+  }> {
+    const res = await fetch('/api/completion-photos/cleanup', {
+      method: 'POST',
+      headers: getAuthHeaders(user),
+      body: JSON.stringify({
+        userRole: user?.role,
+        userId: user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can trigger manual photo cleanup.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Cleanup failed');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * FETCH PERSISTENT TASKS FROM SERVER
+   */
+  async getTasks(): Promise<DailyTask[]> {
+    try {
+      const res = await fetch('/api/tasks');
+      if (!res.ok) throw new Error('Failed to fetch tasks');
+      const data = await res.json();
+      return data.tasks || [];
+    } catch (err) {
+      console.warn('Error fetching tasks from server:', err);
+      return [];
+    }
+  },
+
+  /**
+   * UPDATE PERSISTENT TASK ON SERVER
+   */
+  async updateTask(task: DailyTask): Promise<DailyTask> {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task),
+    });
+    if (!res.ok) throw new Error('Failed to update task');
+    const data = await res.json();
+    return data.task;
+  },
+
+  /**
+   * DELETE A TASK COMPLETION PHOTO
+   */
+  async deleteCompletionPhoto(params: {
+    photoId: string;
+    taskId?: string;
+    user?: User | null;
+  }): Promise<{ success: boolean; message: string; task?: DailyTask }> {
+    const res = await fetch(`/api/completion-photos/${encodeURIComponent(params.photoId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(params.user),
+      body: JSON.stringify({
+        taskId: params.taskId,
+        userId: params.user?.id,
+        userRole: params.user?.role,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to delete completion photo');
+    }
+
+    return await res.json();
   },
 };
 

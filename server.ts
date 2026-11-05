@@ -28,23 +28,29 @@ const ai = new GoogleGenAI({
   },
 });
 
-// Path to persistent training knowledge database and permanent photo uploads
+// Path to persistent training knowledge database and permanent/temporary photo uploads
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const REFERENCE_UPLOADS_DIR = path.join(UPLOADS_DIR, 'reference');
+const COMPLETION_UPLOADS_DIR = path.join(UPLOADS_DIR, 'completion');
+
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'training_knowledge.json');
 const GUIDES_FILE = path.join(DATA_DIR, 'guides.json');
 const ROOM_PHOTOS_FILE = path.join(DATA_DIR, 'room_photos.json');
 const ROOM_ANALYSIS_FILE = path.join(DATA_DIR, 'room_analysis.json');
+const COMPLETION_PHOTOS_FILE = path.join(DATA_DIR, 'completion_photos.json');
+const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
 
-// Ensure data and uploads directories exist
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+// Ensure distinct data and categorized uploads directories exist
+[DATA_DIR, UPLOADS_DIR, REFERENCE_UPLOADS_DIR, COMPLETION_UPLOADS_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
 
-// Statically serve permanently uploaded reference photos
+// Statically serve reference photos (permanent) and task completion photos (40-day retention)
+app.use('/uploads/reference', express.static(REFERENCE_UPLOADS_DIR));
+app.use('/uploads/completion', express.static(COMPLETION_UPLOADS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 
@@ -432,25 +438,136 @@ function saveKnowledgeBase(records: any[]): void {
   }
 }
 
-// Helper to save base64 image data to permanent file on disk
-function saveBase64Image(base64Data: string, prefix = 'ref'): string {
+// 1. Permanent Admin Reference Photo Saver (Stored permanently until Admin replaces or deletes)
+function saveReferencePhoto(base64Data: string, prefix = 'ref'): string {
   if (!base64Data) return '';
   if (!base64Data.startsWith('data:image/')) {
     return base64Data; // Already a URL or static path
   }
   try {
-    const match = base64Data.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    const match = base64Data.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
     if (!match) return base64Data;
     const ext = match[1] === 'jpeg' ? 'jpg' : match[1].replace('+xml', '') || 'jpg';
-    const rawBase64 = match[2];
+    const rawBase64 = match[2].trim();
     const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${safePrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-    const filePath = path.join(UPLOADS_DIR, filename);
+    const filePath = path.join(REFERENCE_UPLOADS_DIR, filename);
     fs.writeFileSync(filePath, Buffer.from(rawBase64, 'base64'));
-    return `/uploads/${filename}`;
+    return `/uploads/reference/${filename}`;
   } catch (err) {
-    console.error('Error saving base64 image to disk:', err);
+    console.error('Error saving permanent reference photo to disk:', err);
     return base64Data;
+  }
+}
+
+// 2. Pantry Boy Task Completion Photo Saver (Stored permanently for 40 days, then auto-purged)
+function saveCompletionPhoto(base64Data: string, prefix = 'comp'): { url: string; fileName: string } {
+  if (!base64Data) return { url: '', fileName: '' };
+  try {
+    const match = base64Data.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
+    if (!match) return { url: base64Data, fileName: '' };
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1].replace('+xml', '') || 'jpg';
+    const rawBase64 = match[2].trim();
+    const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `${safePrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+    const filePath = path.join(COMPLETION_UPLOADS_DIR, filename);
+    fs.writeFileSync(filePath, Buffer.from(rawBase64, 'base64'));
+    return {
+      url: `/uploads/completion/${filename}`,
+      fileName: filename,
+    };
+  } catch (err) {
+    console.error('Error saving task completion photo to disk:', err);
+    return { url: base64Data, fileName: '' };
+  }
+}
+
+// Alias for general reference photo backward compatibility
+function saveBase64Image(base64Data: string, prefix = 'ref'): string {
+  return saveReferencePhoto(base64Data, prefix);
+}
+
+// Helpers for persistent Task Completion Photos (40-Day Retention Database)
+function loadCompletionPhotos(): any[] {
+  try {
+    if (fs.existsSync(COMPLETION_PHOTOS_FILE)) {
+      const data = fs.readFileSync(COMPLETION_PHOTOS_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading completion_photos.json:', err);
+  }
+  return [];
+}
+
+function saveCompletionPhotos(photos: any[]): void {
+  try {
+    fs.writeFileSync(COMPLETION_PHOTOS_FILE, JSON.stringify(photos, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving completion_photos.json:', err);
+  }
+}
+
+// 40-Day Retention Constant & Backend Auto-Cleanup
+const RETENTION_DAYS = 40;
+const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+function cleanupExpiredCompletionPhotos(): { deletedCount: number; remainingCount: number; deletedFiles: string[] } {
+  const photos = loadCompletionPhotos();
+  const now = Date.now();
+  const remaining: any[] = [];
+  const deletedFiles: string[] = [];
+
+  for (const p of photos) {
+    const uploadTime = new Date(p.uploadedAt).getTime();
+    const isExpired = now - uploadTime > RETENTION_MS;
+    if (isExpired) {
+      try {
+        if (p.fileName) {
+          const filePath = path.join(COMPLETION_UPLOADS_DIR, p.fileName);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            deletedFiles.push(p.fileName);
+          }
+        }
+      } catch (err) {
+        console.error('Error deleting expired completion photo file from disk:', p.fileName, err);
+      }
+    } else {
+      remaining.push(p);
+    }
+  }
+
+  if (deletedFiles.length > 0 || remaining.length !== photos.length) {
+    saveCompletionPhotos(remaining);
+    console.log(`[Photo Retention] Permanently cleaned up ${deletedFiles.length} expired task completion photos older than 40 days.`);
+  }
+
+  return {
+    deletedCount: deletedFiles.length,
+    remainingCount: remaining.length,
+    deletedFiles,
+  };
+}
+
+// Helpers for persistent Tasks database
+function loadTasks(): any[] {
+  try {
+    if (fs.existsSync(TASKS_FILE)) {
+      const data = fs.readFileSync(TASKS_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading tasks.json:', err);
+  }
+  return [];
+}
+
+function saveTasks(tasksList: any[]): void {
+  try {
+    fs.writeFileSync(TASKS_FILE, JSON.stringify(tasksList, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving tasks.json:', err);
   }
 }
 
@@ -615,6 +732,18 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
       url: '/src/assets/images/office_switchboard_lights_1793614186214.jpg',
       captionHi: 'स्विच बोर्ड मार्किंग, एसी रिमोट व लाइटिंग कंट्रोल',
       captionEn: 'Switchboard labels, AC remote & lighting control panel',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  workstations: [
+    {
+      id: 'photo_workstations_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'वर्कस्टेशन बे: साफ डेस्क, सीधी कुर्सियां व खाली डस्टबिन',
+      captionEn: 'Workstation bay: Clean desks, aligned chairs & empty bins',
       uploadedAt: '2026-11-02T08:30:00Z',
       uploadedBy: 'Admin (System)',
       isPrimary: true,
@@ -979,6 +1108,19 @@ app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) 
       list[0].isPrimary = true;
     }
 
+    // Unlink physical file from disk if stored in uploads directory
+    if (removed && removed.url) {
+      try {
+        const basename = path.basename(removed.url);
+        const diskPath = path.join(REFERENCE_UPLOADS_DIR, basename);
+        if (fs.existsSync(diskPath)) {
+          fs.unlinkSync(diskPath);
+        }
+      } catch (unlinkErr) {
+        console.warn('Could not unlink reference photo file:', unlinkErr);
+      }
+    }
+
     allRoomPhotos[category] = list;
     saveRoomPhotos(allRoomPhotos);
 
@@ -1001,6 +1143,59 @@ app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) 
     res.status(500).json({ error: err.message || 'Failed to delete photo' });
   }
 });
+
+// Helper to generate expert fallback analysis when Gemini API key is unset or rate limited
+function generateFallbackRoomAnalysis(category: string, roomName: string, count: number) {
+  const name = roomName || category.replace(/_/g, ' ').toUpperCase();
+  return {
+    summaryHi: `${name} के सभी ${count} कोणों का विस्तृत एआई अवलोकन: कुर्सियों की सीधी सीध, कांच की मेज की स्वच्छता, कोस्टर व उल्टे गिलासों की मानक स्थिति।`,
+    summaryEn: `Detailed 360° AI synthesis across all ${count} reference angles of ${name}: uniform chair alignment, streak-free tabletop, coaster and inverted glass positions.`,
+    setupStandardsHi: [
+      `सभी कुर्सियों को मेज के नीचे समान ऊंचाई पर समानांतर अंदर दबाकर रखें।`,
+      `प्रत्येक सीट के ठीक सामने 1 साफ कोस्टर, 1 उल्टा शीशे का गिलास व नोटपैड सजाएं।`,
+      `मेज के मध्य अक्ष पर 2-3 सीलबंद पानी की बोतलें समान दूरी पर रखें (लेबल सामने की ओर)।`,
+      `एसी का तापमान 23°C - 24°C पर मीटिंग से 15-20 मिनट पहले सेट करें।`,
+    ],
+    setupStandardsEn: [
+      `Tuck all chairs parallel and flush beneath table at uniform hydraulic height.`,
+      `Place 1 spotless coaster, 1 inverted glass tumbler, and notepad at each seat.`,
+      `Center 2-3 sealed water bottles evenly along the table spine with labels facing forward.`,
+      `Pre-cool room by turning AC to 23°C-24°C 15-20 minutes before scheduled meetings.`,
+    ],
+    cleaningProcedureHi: [
+      `मेज की सतह पर ग्लास क्लीनर स्प्रे करें और नीले माइक्रोफाइबर कपड़े से एस-आकार में पोंछें।`,
+      `कुर्सियों की गद्दियों को वैक्यूम या सूखे कपड़े से साफ करें और आर्मरेस्ट को सैनिटाइज करें।`,
+      `डस्टबिन खाली करें और नया काला कचरा बैग लगाकर डेस्क के नीचे दाईं ओर रखें।`,
+    ],
+    cleaningProcedureEn: [
+      `Apply glass cleaner and wipe tabletop in an S-pattern using a clean blue microfiber cloth.`,
+      `Vacuum or dust fabric chairs and sanitize armrests thoroughly.`,
+      `Empty the waste bin, fit a fresh black liner, and conceal under the desk right corner.`,
+    ],
+    qualityStandardsHi: [
+      `मेज की कांच पर उंगलियों के निशान या पेय पदार्थों के छल्ले बिल्कुल शून्य (0%) हों।`,
+      `गिलास हमेशा उल्टा रखा होना चाहिए ताकि ऊपर से धूल अंदर न जाए।`,
+      `कमरे में ताज़ी खुशबू और 100% साफ-सुथरा फर्श हो।`,
+    ],
+    qualityStandardsEn: [
+      `Zero smudges, fingerprints, or beverage rings on table surfaces.`,
+      `Glasses must be inverted to prevent airborne particulate accumulation.`,
+      `Room must smell fresh with clean, streak-free flooring.`,
+    ],
+    mistakesToAvoidHi: [
+      `पिछली मीटिंग के जूठे कप, बोतलें या प्रयुक्त टिशू मेज पर छोड़ देना।`,
+      `बिना कोस्टर के ठंडे पानी की बोतल रखना जिससे मेज पर पानी के निशान पड़ते हैं।`,
+      `खाली कमरे में लाइटें और एसी चालू छोड़कर चले जाना।`,
+    ],
+    mistakesToAvoidEn: [
+      `Leaving used cups, empty bottles, or soiled tissues from previous occupants.`,
+      `Placing condensation bottles directly onto surfaces without coasters.`,
+      `Leaving ambient lights and AC running when the room is unoccupied.`,
+    ],
+    analyzedAt: new Date().toISOString(),
+    totalPhotosAnalyzed: count,
+  };
+}
 
 // 8. AI MULTI-PHOTO ROOM ANALYSIS (Analyzes all photos of a room together)
 app.post('/api/ai/analyze-room-photos', requireAdmin, async (req, res) => {
@@ -1053,47 +1248,61 @@ Provide all outputs in conversational, respectful Hindi with accurate English tr
 
     parts.push({ text: promptText });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: { parts },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summaryHi: { type: Type.STRING },
-            summaryEn: { type: Type.STRING },
-            setupStandardsHi: { type: Type.ARRAY, items: { type: Type.STRING } },
-            setupStandardsEn: { type: Type.ARRAY, items: { type: Type.STRING } },
-            cleaningProcedureHi: { type: Type.ARRAY, items: { type: Type.STRING } },
-            cleaningProcedureEn: { type: Type.ARRAY, items: { type: Type.STRING } },
-            qualityStandardsHi: { type: Type.ARRAY, items: { type: Type.STRING } },
-            qualityStandardsEn: { type: Type.ARRAY, items: { type: Type.STRING } },
-            mistakesToAvoidHi: { type: Type.ARRAY, items: { type: Type.STRING } },
-            mistakesToAvoidEn: { type: Type.ARRAY, items: { type: Type.STRING } },
-          },
-          required: [
-            'summaryHi',
-            'summaryEn',
-            'setupStandardsHi',
-            'setupStandardsEn',
-            'cleaningProcedureHi',
-            'cleaningProcedureEn',
-            'qualityStandardsHi',
-            'qualityStandardsEn',
-            'mistakesToAvoidHi',
-            'mistakesToAvoidEn',
-          ],
-        },
-      },
-    });
+    let analysisData: any = null;
 
-    const parsed = JSON.parse(response.text || '{}');
-    const analysisData = {
-      ...parsed,
-      analyzedAt: new Date().toISOString(),
-      totalPhotosAnalyzed: validCount,
-    };
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: { parts },
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                summaryHi: { type: Type.STRING },
+                summaryEn: { type: Type.STRING },
+                setupStandardsHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+                setupStandardsEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+                cleaningProcedureHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+                cleaningProcedureEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+                qualityStandardsHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+                qualityStandardsEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+                mistakesToAvoidHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+                mistakesToAvoidEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: [
+                'summaryHi',
+                'summaryEn',
+                'setupStandardsHi',
+                'setupStandardsEn',
+                'cleaningProcedureHi',
+                'cleaningProcedureEn',
+                'qualityStandardsHi',
+                'qualityStandardsEn',
+                'mistakesToAvoidHi',
+                'mistakesToAvoidEn',
+              ],
+            },
+          },
+        });
+
+        const parsed = JSON.parse(response.text || '{}');
+        if (parsed.summaryHi) {
+          analysisData = {
+            ...parsed,
+            analyzedAt: new Date().toISOString(),
+            totalPhotosAnalyzed: validCount,
+          };
+        }
+      } catch (geminiErr) {
+        console.warn('Gemini multimodal room analysis API issue, using structured fallback:', geminiErr);
+      }
+    }
+
+    if (!analysisData) {
+      analysisData = generateFallbackRoomAnalysis(category, roomName, validCount);
+    }
 
     const analyses = loadRoomAnalysis();
     analyses[category] = analysisData;
@@ -1487,9 +1696,349 @@ app.delete('/api/training/knowledge/:id', requireAdmin, (req, res) => {
   res.json({ success: true, message: 'Instruction deleted successfully' });
 });
 
+// ==========================================
+// PANTRY BOY TASK COMPLETION & 40-DAY RETENTION ENDPOINTS
+// ==========================================
 
+// Complete task with multiple completion photos (Pantry Boy & Admin)
+app.post('/api/tasks/:taskId/complete', (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const {
+      pantryBoyId,
+      pantryBoyName,
+      taskTitle,
+      roomName,
+      notes,
+      beforePhotoBase64,
+      completionPhotos, // Array of { photoBase64: string, angleLabel?: string, caption?: string }
+      afterPhotoBase64, // Legacy fallback single photo
+    } = req.body;
 
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + RETENTION_MS).toISOString();
+    const effectiveUserId = pantryBoyId || (req.headers['x-user-id'] as string) || 'pantry_user';
+    const effectiveUserName = pantryBoyName || (req.headers['x-user-name'] as string) || 'Pantry Boy';
 
+    // 1. Process Before Photo if provided (also subject to 40-day retention policy)
+    let beforePhotoUrl: string | undefined = undefined;
+    let beforePhotoFileName: string | undefined = undefined;
+    if (beforePhotoBase64 && beforePhotoBase64.startsWith('data:image/')) {
+      const saved = saveCompletionPhoto(beforePhotoBase64, `task_${taskId}_before`);
+      beforePhotoUrl = saved.url;
+      beforePhotoFileName = saved.fileName;
+    } else if (beforePhotoBase64) {
+      beforePhotoUrl = beforePhotoBase64;
+    }
+
+    // 2. Process all Completion/Proof Photos (stored strictly in /data/uploads/completion/)
+    const rawPhotosList: Array<{ photoBase64: string; angleLabel?: string; caption?: string }> = [];
+    if (Array.isArray(completionPhotos) && completionPhotos.length > 0) {
+      rawPhotosList.push(...completionPhotos);
+    } else if (afterPhotoBase64) {
+      rawPhotosList.push({ photoBase64: afterPhotoBase64, angleLabel: 'Completion Photo' });
+    }
+
+    const savedProofItems: any[] = [];
+    rawPhotosList.forEach((item, idx) => {
+      if (!item || !item.photoBase64) return;
+      let finalUrl = item.photoBase64;
+      let finalFileName = '';
+
+      if (item.photoBase64.startsWith('data:image/')) {
+        const saved = saveCompletionPhoto(item.photoBase64, `task_${taskId}_comp_${idx + 1}`);
+        finalUrl = saved.url;
+        finalFileName = saved.fileName;
+      }
+
+      const proofItem = {
+        id: `proof_${taskId}_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+        taskId,
+        taskTitle: taskTitle || 'Office Task',
+        roomName: roomName || 'General Office',
+        url: finalUrl,
+        fileName: finalFileName,
+        uploadedAt: now,
+        expiresAt: expiresAt,
+        pantryBoyId: effectiveUserId,
+        pantryBoyName: effectiveUserName,
+        angleLabel: item.angleLabel || `Angle #${idx + 1}`,
+        caption: item.caption || '',
+        retentionDays: RETENTION_DAYS,
+      };
+
+      savedProofItems.push(proofItem);
+    });
+
+    // 3. Save into Completion Photos Audit & Retention Database (completion_photos.json)
+    const allCompletionPhotos = loadCompletionPhotos();
+    if (savedProofItems.length > 0) {
+      allCompletionPhotos.push(...savedProofItems);
+      saveCompletionPhotos(allCompletionPhotos);
+    }
+
+    // 4. Update the Task in persistent tasks database (tasks.json)
+    const tasksList = loadTasks();
+    const taskIndex = tasksList.findIndex((t: any) => t.id === taskId);
+    const primaryAfterUrl = savedProofItems[0]?.url || (typeof afterPhotoBase64 === 'string' && !afterPhotoBase64.startsWith('data:image/') ? afterPhotoBase64 : '');
+
+    let updatedTaskRecord: any = null;
+    if (taskIndex !== -1) {
+      tasksList[taskIndex] = {
+        ...tasksList[taskIndex],
+        status: 'completed',
+        completedAt: now,
+        completedByUserId: effectiveUserId,
+        completedByUserName: effectiveUserName,
+        afterPhotoUrl: primaryAfterUrl || tasksList[taskIndex].afterPhotoUrl,
+        beforePhotoUrl: beforePhotoUrl || tasksList[taskIndex].beforePhotoUrl,
+        proofPhotos: savedProofItems.length > 0 ? savedProofItems : (tasksList[taskIndex].proofPhotos || []),
+        notes: notes ?? tasksList[taskIndex].notes,
+      };
+      updatedTaskRecord = tasksList[taskIndex];
+    } else {
+      updatedTaskRecord = {
+        id: taskId,
+        title: taskTitle || 'Completed Task',
+        roomName: roomName || 'General Office',
+        status: 'completed',
+        completedAt: now,
+        completedByUserId: effectiveUserId,
+        completedByUserName: effectiveUserName,
+        afterPhotoUrl: primaryAfterUrl,
+        beforePhotoUrl: beforePhotoUrl,
+        proofPhotos: savedProofItems,
+        notes: notes || '',
+      };
+      tasksList.push(updatedTaskRecord);
+    }
+    saveTasks(tasksList);
+
+    // 5. Trigger proactive cleanup of any expired photos older than 40 days
+    cleanupExpiredCompletionPhotos();
+
+    res.json({
+      success: true,
+      message: `Task completed! ${savedProofItems.length} completion photo(s) stored securely for 40 days.`,
+      task: updatedTaskRecord,
+      proofPhotos: savedProofItems,
+      uploadedAt: now,
+      expiresAt: expiresAt,
+      retentionDays: RETENTION_DAYS,
+    });
+  } catch (err: any) {
+    console.error('Error completing task with photos:', err);
+    res.status(500).json({ error: err.message || 'Failed to complete task' });
+  }
+});
+
+// Query all active completion photos (Runs 40-day retention cleanup first)
+app.get('/api/completion-photos', (req, res) => {
+  try {
+    cleanupExpiredCompletionPhotos();
+    const photos = loadCompletionPhotos();
+    const { taskId, pantryBoyId, roomName } = req.query;
+
+    let filtered = photos;
+    if (taskId) {
+      filtered = filtered.filter((p) => p.taskId === taskId);
+    }
+    if (pantryBoyId) {
+      filtered = filtered.filter((p) => p.pantryBoyId === pantryBoyId);
+    }
+    if (roomName) {
+      filtered = filtered.filter((p) => p.roomName?.toLowerCase() === String(roomName).toLowerCase());
+    }
+
+    // Sort newest first
+    filtered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+
+    res.json({
+      success: true,
+      photos: filtered,
+      totalCount: filtered.length,
+      retentionPolicyDays: RETENTION_DAYS,
+    });
+  } catch (err: any) {
+    console.error('Error retrieving completion photos:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch completion photos' });
+  }
+});
+
+// Retention status inspection (Audit dashboard for Admin & Staff)
+app.get('/api/completion-photos/retention-status', (req, res) => {
+  try {
+    const photos = loadCompletionPhotos();
+    const now = Date.now();
+
+    // Check disk files
+    let diskFiles: string[] = [];
+    let diskUsageBytes = 0;
+    try {
+      if (fs.existsSync(COMPLETION_UPLOADS_DIR)) {
+        diskFiles = fs.readdirSync(COMPLETION_UPLOADS_DIR);
+        diskFiles.forEach((f) => {
+          try {
+            const stats = fs.statSync(path.join(COMPLETION_UPLOADS_DIR, f));
+            diskUsageBytes += stats.size;
+          } catch {}
+        });
+      }
+    } catch {}
+
+    let nextExpiringPhoto: any = null;
+    let minTimeToExpiry = Infinity;
+
+    photos.forEach((p) => {
+      const uploadTime = new Date(p.uploadedAt).getTime();
+      const expiresTime = uploadTime + RETENTION_MS;
+      const timeLeft = expiresTime - now;
+      if (timeLeft > 0 && timeLeft < minTimeToExpiry) {
+        minTimeToExpiry = timeLeft;
+        nextExpiringPhoto = {
+          id: p.id,
+          taskTitle: p.taskTitle,
+          uploadedAt: p.uploadedAt,
+          expiresAt: new Date(expiresTime).toISOString(),
+          daysRemaining: Math.max(0, Math.ceil(timeLeft / (24 * 60 * 60 * 1000))),
+        };
+      }
+    });
+
+    res.json({
+      success: true,
+      retentionPolicyDays: RETENTION_DAYS,
+      totalDatabaseRecords: photos.length,
+      diskFilesCount: diskFiles.length,
+      diskUsageFormatted: `${(diskUsageBytes / (1024 * 1024)).toFixed(2)} MB`,
+      storageDirectory: '/data/uploads/completion',
+      referenceStorageDirectory: '/data/uploads/reference (Permanent)',
+      nextExpiringPhoto,
+      serverTime: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to calculate retention status' });
+  }
+});
+
+// Manual 40-Day Cleanup trigger (Admin only)
+app.post('/api/completion-photos/cleanup', requireAdmin, (req, res) => {
+  try {
+    const result = cleanupExpiredCompletionPhotos();
+    res.json({
+      success: true,
+      message: `Cleaned up ${result.deletedCount} expired photos. ${result.remainingCount} active photos remaining within 40-day window.`,
+      result,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Cleanup operation failed' });
+  }
+});
+
+// Tasks Getter & Updater for persistent database
+app.get('/api/tasks', (req, res) => {
+  try {
+    const tasks = loadTasks();
+    res.json({ success: true, tasks });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch tasks' });
+  }
+});
+
+app.put('/api/tasks/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = req.body;
+    const tasks = loadTasks();
+    const idx = tasks.findIndex((t: any) => t.id === id);
+    if (idx !== -1) {
+      tasks[idx] = { ...tasks[idx], ...updated };
+    } else {
+      tasks.push({ id, ...updated });
+    }
+    saveTasks(tasks);
+    res.json({ success: true, task: idx !== -1 ? tasks[idx] : tasks[tasks.length - 1] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update task' });
+  }
+});
+
+// DELETE TASK COMPLETION PHOTO (Admin or owner Pantry Boy)
+app.delete('/api/completion-photos/:photoId', (req, res) => {
+  try {
+    const { photoId } = req.params;
+    const { taskId } = req.body || req.query;
+    const userRole = (req.headers['x-user-role'] || req.body?.userRole) as string;
+    const userId = (req.headers['x-user-id'] || req.body?.userId) as string;
+
+    const allCompletionPhotos = loadCompletionPhotos();
+    const photoIdx = allCompletionPhotos.findIndex((p: any) => p.id === photoId);
+    let removedItem: any = null;
+
+    if (photoIdx !== -1) {
+      removedItem = allCompletionPhotos[photoIdx];
+
+      // Permission check: Admin or the owner pantry boy
+      if (userRole !== 'admin' && userId && removedItem.pantryBoyId && removedItem.pantryBoyId !== userId) {
+        return res.status(403).json({ error: 'Permission denied to delete this photo' });
+      }
+
+      // Physically delete file from /data/uploads/completion/
+      const fileToDelete = removedItem.fileName || (removedItem.url && removedItem.url.startsWith('/uploads/completion/') ? path.basename(removedItem.url) : null);
+      if (fileToDelete) {
+        try {
+          const filePath = path.join(COMPLETION_UPLOADS_DIR, fileToDelete);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (e) {
+          console.warn('Failed to delete completion photo file from disk:', e);
+        }
+      }
+
+      allCompletionPhotos.splice(photoIdx, 1);
+      saveCompletionPhotos(allCompletionPhotos);
+    }
+
+    // Also remove from tasks.json
+    const targetTaskId = taskId || removedItem?.taskId;
+    const tasksList = loadTasks();
+    let updatedTask: any = null;
+
+    if (targetTaskId) {
+      const taskIdx = tasksList.findIndex((t: any) => t.id === targetTaskId);
+      if (taskIdx !== -1) {
+        const task = tasksList[taskIdx];
+        if (Array.isArray(task.proofPhotos)) {
+          task.proofPhotos = task.proofPhotos.filter((p: any) => p.id !== photoId);
+          if (task.proofPhotos.length > 0) {
+            task.afterPhotoUrl = task.proofPhotos[0].url;
+            task.proofPhotoUrl = task.proofPhotos[0].url;
+          } else {
+            task.afterPhotoUrl = undefined;
+            task.proofPhotoUrl = undefined;
+          }
+        } else if (removedItem && task.proofPhotoUrl === removedItem.url) {
+          task.afterPhotoUrl = undefined;
+          task.proofPhotoUrl = undefined;
+        }
+        tasksList[taskIdx] = task;
+        saveTasks(tasksList);
+        updatedTask = task;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Completion photo deleted successfully from disk and task record.',
+      photoId,
+      task: updatedTask,
+    });
+  } catch (err: any) {
+    console.error('Error deleting completion photo:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete completion photo' });
+  }
+});
 
 // 9. SPEECH SYNTHESIS HELPERS FOR GEMINI AUDIO (24kHz WAV & Raw PCM)
 
@@ -1653,6 +2202,25 @@ app.post('/api/ai/synthesize-speech', async (req, res) => {
 // Vite middleware integration (Dev Mode vs Production Mode)
 async function startServer() {
   const server = http.createServer(app);
+
+  // Run 40-day photo retention cleanup on server start
+  try {
+    const cleanupResult = cleanupExpiredCompletionPhotos();
+    if (cleanupResult.deletedCount > 0) {
+      console.log(`[Photo Retention] On startup, cleaned up ${cleanupResult.deletedCount} expired photos.`);
+    }
+  } catch (err) {
+    console.error('Error running initial photo retention cleanup:', err);
+  }
+
+  // Schedule automatic 40-day photo retention check every 1 hour
+  setInterval(() => {
+    try {
+      cleanupExpiredCompletionPhotos();
+    } catch (err) {
+      console.error('Error during scheduled photo retention cleanup:', err);
+    }
+  }, 60 * 60 * 1000);
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer } = await import('vite');

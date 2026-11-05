@@ -152,12 +152,32 @@ export interface DailyTask {
   completedAt?: string;
   proofPhotoUrl?: string;
   beforePhotoUrl?: string;
+  proofPhotos?: CompletionPhotoItem[]; // Multiple task completion photos (40-day retention)
   boyNotes?: string;
 
   // Admin Review
   adminStatus?: 'pending_review' | 'approved' | 'needs_rework';
   adminFeedback?: string;
   adminReviewedAt?: string;
+}
+
+export interface CompletionPhotoItem {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskTitleHi?: string;
+  roomName: string;
+  roomCategory?: RoomCategory | string;
+  pantryBoyId: string;
+  pantryBoyName: string;
+  url: string;
+  fileName: string;
+  uploadedAt: string; // Exact ISO timestamp
+  expiresAt: string; // uploadedAt + 40 days
+  angleLabel?: string;
+  caption?: string;
+  photoType?: 'before' | 'after';
+  retentionDays?: number;
 }
 
 export interface TrainingInstructionStep {

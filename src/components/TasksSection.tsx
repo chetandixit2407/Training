@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { DailyTask, User, Language } from '../types';
 import { VoiceButton } from './VoiceButton';
 import { TaskCompleteModal } from './TaskCompleteModal';
+import { AITrainingService } from '../services/aiTrainingService';
 import {
   CheckCircle2,
   Clock,
@@ -13,6 +14,7 @@ import {
   Sparkles,
   Maximize2,
   Calendar,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface TasksSectionProps {
@@ -44,28 +46,61 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
     return true;
   });
 
-  const handleCompleteTask = (
+  const handleCompleteTask = async (
     taskId: string,
-    proofPhotoUrl: string,
+    proofPhotos: Array<{ photoBase64: string; angleLabel?: string; caption?: string }>,
+    primaryPhotoUrl: string,
     beforePhotoUrl?: string,
     notes?: string
   ) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
+    const now = new Date().toISOString();
+    const effectiveName = currentUser
+      ? language === 'hi'
+        ? currentUser.nameHi
+        : currentUser.name
+      : 'Ramesh Kumar';
+    const effectiveId = currentUser?.id || 'pb-101';
+
+    // Optimistically update local task state immediately
     const updated: DailyTask = {
       ...task,
       status: 'completed',
-      proofPhotoUrl,
+      proofPhotoUrl: primaryPhotoUrl,
       beforePhotoUrl,
       boyNotes: notes,
-      completedByUserId: currentUser?.id || 'pb-101',
-      completedByName: currentUser ? (language === 'hi' ? currentUser.nameHi : currentUser.name) : 'Ramesh Kumar',
-      completedAt: new Date().toISOString(),
+      completedByUserId: effectiveId,
+      completedByName: effectiveName,
+      completedAt: now,
       adminStatus: 'pending_review',
     };
-
     onUpdateTask(updated);
+
+    // Persist to backend server in /data/uploads/completion with 40-day retention
+    try {
+      const result = await AITrainingService.completeTaskWithPhotos({
+        taskId,
+        taskTitle: language === 'hi' ? task.titleHi : task.titleEn,
+        roomName: language === 'hi' ? task.roomNameHi : task.roomNameEn,
+        user: currentUser,
+        notes,
+        beforePhotoBase64: beforePhotoUrl,
+        completionPhotos: proofPhotos,
+      });
+
+      if (result && result.task) {
+        onUpdateTask({
+          ...updated,
+          ...result.task,
+          proofPhotos: result.proofPhotos || [],
+          proofPhotoUrl: result.proofPhotos?.[0]?.url || primaryPhotoUrl,
+        });
+      }
+    } catch (err) {
+      console.warn('Backend task completion sync notice:', err);
+    }
   };
 
   const pendingCount = tasks.filter((t) => t.status !== 'completed').length;

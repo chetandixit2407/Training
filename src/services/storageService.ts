@@ -124,6 +124,10 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// In-memory room photo & analysis caches
+let roomPhotosCache: Record<string, RoomPhotoItem[]> = {};
+let roomAnalysesCache: Record<string, AIRoomAnalysis> = {};
+
 export const StorageService = {
   // Initialization function to ensure preloaded photo sync from server backend and IndexedDB
   async init(): Promise<void> {
@@ -142,8 +146,44 @@ export const StorageService = {
           }
         });
       }
+
+      // 2. Fetch server-persisted room photos galleries & AI analyses
+      const { photosByRoom, analysesByRoom } = await AITrainingService.getAllRoomsPhotos();
+      if (photosByRoom && Object.keys(photosByRoom).length > 0) {
+        roomPhotosCache = { ...photosByRoom };
+        Object.entries(photosByRoom).forEach(([cat, list]) => {
+          const primary = list.find((p) => p.isPrimary) || list[0];
+          if (primary && primary.url) {
+            photoMemoryCache[`guide_photo_guide-${cat}`] = primary.url;
+            photoMemoryCache[`guide_photo_${cat}`] = primary.url;
+          }
+        });
+      }
+      if (analysesByRoom && Object.keys(analysesByRoom).length > 0) {
+        roomAnalysesCache = { ...analysesByRoom };
+      }
+
+      // 3. Fetch server-persisted tasks (including proofPhotos with 40-day retention)
+      try {
+        const serverTasks = await AITrainingService.getTasks();
+        if (Array.isArray(serverTasks) && serverTasks.length > 0) {
+          const localTasks = this.getTasks();
+          const mergedTasks = [...localTasks];
+          serverTasks.forEach((st) => {
+            const idx = mergedTasks.findIndex((lt) => lt.id === st.id);
+            if (idx !== -1) {
+              mergedTasks[idx] = { ...mergedTasks[idx], ...st };
+            } else {
+              mergedTasks.push(st);
+            }
+          });
+          this.saveTasks(mergedTasks);
+        }
+      } catch (taskSyncErr) {
+        console.warn('Server tasks sync notice:', taskSyncErr);
+      }
     } catch (e) {
-      console.warn('Backend knowledge sync notice:', e);
+      console.warn('Backend knowledge & photos sync notice:', e);
     }
 
     const photos = await PhotoStorageDB.getAllPhotos();
@@ -297,10 +337,10 @@ export const StorageService = {
     // Double check refrigerator is removed
     guides = guides.filter((g) => (g.category as string) !== 'refrigerator');
 
-    // Overlay custom uploaded photos from PhotoStorageDB memory cache
+    // Overlay custom uploaded photos from PhotoStorageDB memory cache and server room galleries
     return guides.map((guide) => {
-      const customPhoto = photoMemoryCache[`guide_photo_${guide.id}`];
-      const customIncPhoto = photoMemoryCache[`guide_inc_${guide.id}`];
+      const customPhoto = photoMemoryCache[`guide_photo_${guide.id}`] || photoMemoryCache[`guide_photo_${guide.category}`];
+      const customIncPhoto = photoMemoryCache[`guide_inc_${guide.id}`] || photoMemoryCache[`guide_inc_${guide.category}`];
 
       // Resolve lightweight IDB pointer if present
       let finalPhoto = guide.photoUrl;
@@ -315,12 +355,46 @@ export const StorageService = {
         finalIncPhoto = photoMemoryCache[idbKey] || undefined;
       }
 
+      const roomGallery = roomPhotosCache[guide.category] || guide.photos || [];
+      const primaryItem = roomGallery.find((p) => p.isPrimary);
+      const primaryUrl = primaryItem ? primaryItem.url : '';
+      const roomAnalysis = roomAnalysesCache[guide.category] || guide.aiRoomAnalysis;
+
       return {
         ...guide,
-        photoUrl: customPhoto !== undefined ? customPhoto : finalPhoto,
+        photoUrl: primaryUrl || (customPhoto !== undefined ? customPhoto : finalPhoto),
         incorrectPhotoUrl: customIncPhoto !== undefined ? customIncPhoto : finalIncPhoto,
+        photos: roomGallery,
+        aiRoomAnalysis: roomAnalysis,
       };
     });
+  },
+
+  getRoomPhotos(category: string): RoomPhotoItem[] {
+    return roomPhotosCache[category] || [];
+  },
+
+  getAllRoomPhotos(): Record<string, RoomPhotoItem[]> {
+    return roomPhotosCache;
+  },
+
+  setRoomPhotos(category: string, photos: RoomPhotoItem[]): void {
+    roomPhotosCache[category] = photos;
+    const primary = photos.find((p) => p.isPrimary) || photos[0];
+    if (primary && primary.url) {
+      photoMemoryCache[`guide_photo_guide-${category}`] = primary.url;
+      photoMemoryCache[`guide_photo_${category}`] = primary.url;
+    }
+    broadcastUpdate('guides');
+  },
+
+  getRoomAnalysis(category: string): AIRoomAnalysis | null {
+    return roomAnalysesCache[category] || null;
+  },
+
+  setRoomAnalysis(category: string, analysis: AIRoomAnalysis): void {
+    roomAnalysesCache[category] = analysis;
+    broadcastUpdate('guides');
   },
 
   saveVisualGuides(guides: VisualGuide[]): void {
@@ -552,6 +626,10 @@ export const StorageService = {
       tasks[idx] = updatedTask;
       this.saveTasks(tasks);
     }
+    // Also asynchronously sync to backend server
+    AITrainingService.updateTask(updatedTask).catch((e) => {
+      console.warn('Backend task update notice:', e);
+    });
   },
 
   deleteTask(taskId: string): void {
