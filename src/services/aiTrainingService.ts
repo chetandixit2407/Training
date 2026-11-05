@@ -17,9 +17,17 @@ function getAuthHeaders(user?: User | null): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (user) {
-    headers['x-user-id'] = user.id;
-    headers['x-user-role'] = user.role;
+  let activeUser = user;
+  if (!activeUser && typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('office_train_current_user_v4');
+      if (stored) activeUser = JSON.parse(stored);
+    } catch {}
+  }
+  if (activeUser) {
+    headers['x-user-id'] = activeUser.id;
+    headers['x-user-role'] = activeUser.role;
+    headers['x-user-name'] = encodeURIComponent(activeUser.name || '');
   }
   return headers;
 }
@@ -324,13 +332,24 @@ export const AITrainingService = {
     category: string,
     photoId: string,
     user?: User | null
-  ): Promise<{ success: boolean; photos: RoomPhotoItem[] }> {
-    const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}/item/${encodeURIComponent(photoId)}`, {
+  ): Promise<{ success: boolean; photos: RoomPhotoItem[]; message: string }> {
+    let activeUser = user;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('office_train_current_user_v4');
+        if (stored) activeUser = JSON.parse(stored);
+      } catch {}
+    }
+    const queryParams = new URLSearchParams({
+      userRole: activeUser?.role || '',
+      userId: activeUser?.id || '',
+    });
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}/item/${encodeURIComponent(photoId)}?${queryParams.toString()}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(user),
+      headers: getAuthHeaders(activeUser),
       body: JSON.stringify({
-        userRole: user?.role,
-        userId: user?.id,
+        userRole: activeUser?.role,
+        userId: activeUser?.id,
       }),
     });
 
@@ -421,14 +440,26 @@ export const AITrainingService = {
     category: string;
     photoType?: 'reference' | 'incorrect';
     user?: User | null;
-  }): Promise<void> {
-    const res = await fetch(`/api/photos/room/${encodeURIComponent(params.category)}`, {
+  }): Promise<{ success: boolean; message: string; photos: RoomPhotoItem[] }> {
+    let activeUser = params.user;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('office_train_current_user_v4');
+        if (stored) activeUser = JSON.parse(stored);
+      } catch {}
+    }
+    const queryParams = new URLSearchParams({
+      photoType: params.photoType || 'reference',
+      userRole: activeUser?.role || '',
+      userId: activeUser?.id || '',
+    });
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(params.category)}?${queryParams.toString()}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(params.user),
+      headers: getAuthHeaders(activeUser),
       body: JSON.stringify({
         photoType: params.photoType || 'reference',
-        userRole: params.user?.role,
-        userId: params.user?.id,
+        userRole: activeUser?.role,
+        userId: activeUser?.id,
       }),
     });
 
@@ -440,6 +471,8 @@ export const AITrainingService = {
       const errorJson = await res.json().catch(() => ({}));
       throw new Error(errorJson.error || `Failed to delete photo: ${res.statusText}`);
     }
+
+    return await res.json();
   },
 
   /**
@@ -611,26 +644,81 @@ export const AITrainingService = {
   },
 
   /**
-   * DELETE A TASK COMPLETION PHOTO
+   * DELETE A TASK COMPLETION PHOTO (Permanently unlinks from disk and updates DB)
    */
   async deleteCompletionPhoto(params: {
     photoId: string;
     taskId?: string;
     user?: User | null;
-  }): Promise<{ success: boolean; message: string; task?: DailyTask }> {
-    const res = await fetch(`/api/completion-photos/${encodeURIComponent(params.photoId)}`, {
+  }): Promise<{ success: boolean; message: string; task?: DailyTask; tasks?: DailyTask[] }> {
+    let activeUser = params.user;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('office_train_current_user_v4');
+        if (stored) activeUser = JSON.parse(stored);
+      } catch {}
+    }
+    const queryParams = new URLSearchParams({
+      taskId: params.taskId || '',
+      userId: activeUser?.id || '',
+      userRole: activeUser?.role || '',
+    });
+    const res = await fetch(`/api/completion-photos/${encodeURIComponent(params.photoId)}?${queryParams.toString()}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(params.user),
+      headers: getAuthHeaders(activeUser),
       body: JSON.stringify({
         taskId: params.taskId,
-        userId: params.user?.id,
-        userRole: params.user?.role,
+        userId: activeUser?.id,
+        userRole: activeUser?.role,
       }),
     });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: You do not have permission to delete this completion photo.');
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Failed to delete completion photo');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * DELETE ALL PROOF PHOTOS FROM A TASK
+   */
+  async deleteTaskProofPhotos(params: {
+    taskId: string;
+    user?: User | null;
+  }): Promise<{ success: boolean; message: string; task: DailyTask }> {
+    let activeUser = params.user;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('office_train_current_user_v4');
+        if (stored) activeUser = JSON.parse(stored);
+      } catch {}
+    }
+    const queryParams = new URLSearchParams({
+      userId: activeUser?.id || '',
+      userRole: activeUser?.role || '',
+    });
+    const res = await fetch(`/api/tasks/${encodeURIComponent(params.taskId)}/proof-photo?${queryParams.toString()}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(activeUser),
+      body: JSON.stringify({
+        userId: activeUser?.id,
+        userRole: activeUser?.role,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: You do not have permission to delete photos from this task.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to delete task proof photos');
     }
 
     return await res.json();

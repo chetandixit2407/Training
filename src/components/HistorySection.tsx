@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DailyTask, User, Language, CompletionPhotoItem } from '../types';
 import { AITrainingService } from '../services/aiTrainingService';
+import { StorageService } from '../services/storageService';
 import {
   CheckCircle2,
   Clock,
@@ -86,6 +87,9 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
       });
 
       if (res.success) {
+        // Clear from local client storage immediately
+        StorageService.deleteCompletionPhotoFromStorage(photoId, taskId);
+
         // Update task locally
         const targetTask = tasks.find((t) => t.id === taskId);
         if (targetTask) {

@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, VisualGuide, DailyTask, RoomCategory, Language, RoomPhotoItem, AIRoomAnalysis } from '../types';
+import { User, VisualGuide, DailyTask, RoomCategory, Language, RoomPhotoItem, AIRoomAnalysis, CompletionPhotoItem } from '../types';
 import { StorageService, fileToDataUrl } from '../services/storageService';
 import { AITrainingService } from '../services/aiTrainingService';
 import { VoiceButton } from './VoiceButton';
 import {
   Shield,
+  ShieldCheck,
+  Calendar,
   UserPlus,
   Trash2,
   Edit3,
@@ -59,7 +61,16 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   language,
   onRefreshData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'galleries' | 'users' | 'create_task'>('galleries');
+  const [activeTab, setActiveTab] = useState<'galleries' | 'users' | 'create_task' | 'completion_photos'>('galleries');
+
+  // Completion Photos & 40-Day Retention Audit state
+  const [allCompletionPhotos, setAllCompletionPhotos] = useState<CompletionPhotoItem[]>([]);
+  const [completionFilterRoom, setCompletionFilterRoom] = useState<string>('all');
+  const [completionFilterStaff, setCompletionFilterStaff] = useState<string>('all');
+  const [retentionAudit, setRetentionAudit] = useState<any>(null);
+  const [isLoadingCompletion, setIsLoadingCompletion] = useState(false);
+  const [cleanupToast, setCleanupToast] = useState<string | null>(null);
+  const [previewCompletionPhoto, setPreviewCompletionPhoto] = useState<CompletionPhotoItem | null>(null);
 
   // Room / Guide selector
   const [selectedGuideId, setSelectedGuideId] = useState<string>(() => guides[0]?.id || '');
@@ -144,6 +155,61 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
       setRoomAnalysis(StorageService.getRoomAnalysis(cat));
     } finally {
       setLoadingPhotos(false);
+    }
+  };
+
+  const loadCompletionAuditData = async () => {
+    setIsLoadingCompletion(true);
+    try {
+      const [photos, status] = await Promise.all([
+        AITrainingService.getCompletionPhotos(),
+        AITrainingService.getRetentionStatus().catch(() => null),
+      ]);
+      setAllCompletionPhotos(photos);
+      setRetentionAudit(status);
+    } catch (e) {
+      console.warn('Failed to load completion audit data in Admin:', e);
+    } finally {
+      setIsLoadingCompletion(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'completion_photos') {
+      loadCompletionAuditData();
+    }
+  }, [activeTab]);
+
+  const handleRunAdminCleanup = async () => {
+    try {
+      setCleanupToast(language === 'hi' ? 'सफाई चल रही है...' : 'Running 40-day cleanup...');
+      const res = await AITrainingService.triggerManualCleanup(currentUser);
+      setCleanupToast(
+        language === 'hi'
+          ? `${res.result.deletedCount} समाप्त फोटो हटाई गईं। ${res.result.remainingCount} फोटो 40-दिन की सीमा में सुरक्षित हैं।`
+          : `Cleaned up ${res.result.deletedCount} expired photos. ${res.result.remainingCount} active photos remaining within 40-day window.`
+      );
+      await loadCompletionAuditData();
+      onRefreshData();
+      setTimeout(() => setCleanupToast(null), 5000);
+    } catch (err: any) {
+      setCleanupToast(err.message || 'Cleanup failed');
+    }
+  };
+
+  const handleDeleteCompletionItem = async (photoId: string, taskId?: string) => {
+    if (!window.confirm(language === 'hi' ? 'क्या आप इस समाप्ति फोटो को सर्वर से हमेशा के लिए हटाना चाहते हैं?' : 'Permanently delete this completion photo from server storage?')) return;
+    try {
+      const res = await AITrainingService.deleteCompletionPhoto({ photoId, taskId, user: currentUser });
+      if (res.success) {
+        StorageService.deleteCompletionPhotoFromStorage(photoId, taskId);
+        setAllCompletionPhotos((prev) => prev.filter((p) => p.id !== photoId));
+        if (previewCompletionPhoto?.id === photoId) setPreviewCompletionPhoto(null);
+        await loadCompletionAuditData();
+        onRefreshData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete completion photo');
     }
   };
 
@@ -587,6 +653,23 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         >
           <CheckSquare className="w-4 h-4 text-emerald-600" />
           <span>{language === 'hi' ? 'नया कार्य असाइन करें' : 'Create & Assign Task'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('completion_photos')}
+          className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer min-h-[40px] ${
+            activeTab === 'completion_photos' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>{language === 'hi' ? 'कार्य समाप्ति फोटो व 40-दिन ऑडिट' : 'Completion Photos & 40d Audit'}</span>
+          {allCompletionPhotos.length > 0 && (
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              activeTab === 'completion_photos' ? 'bg-emerald-950 text-emerald-300' : 'bg-emerald-100 text-emerald-800'
+            }`}>
+              {allCompletionPhotos.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1556,6 +1639,358 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
               <span>{language === 'hi' ? 'कार्य बनाएं व असाइन करें (Assign Task)' : 'Assign Daily Task'}</span>
             </button>
           </form>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 4: PANTRY BOY COMPLETION PHOTOS & 40-DAY AUDIT       */}
+      {/* ======================================================== */}
+      {activeTab === 'completion_photos' && (
+        <div className="space-y-5 animate-in fade-in">
+          {/* Header & Retention Policy Card */}
+          <div className="bg-slate-900 text-white rounded-2xl p-5 sm:p-6 border border-slate-800 shadow-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base sm:text-lg text-white">
+                      {language === 'hi'
+                        ? 'पैंट्री बॉय कार्य समाप्ति फोटो व 40-दिवसीय ऑडिट'
+                        : 'Pantry Boy Task Completion Photos & 40-Day Audit'}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-wide">
+                      40-Day Retention
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                    {language === 'hi'
+                      ? 'पैंट्री स्टाफ द्वारा काम पूरा करने पर अपलोड की गई सभी फोटो यहाँ 40 दिनों तक सुरक्षित रहती हैं और 40 दिन बाद सर्वर से फ़ाइल व रिकॉर्ड स्वतः हटा दिए जाते हैं। संदर्भ फोटो स्थायी रहते हैं।'
+                      : 'All photos uploaded by staff upon task completion are stored strictly in backend storage for 40 days, then automatically purged along with files from disk. Official reference photos remain permanent.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={handleRunAdminCleanup}
+                  className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{language === 'hi' ? '40-दिन पुरानी फोटो अभी साफ करें' : 'Run 40-Day Cleanup Now'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={loadCompletionAuditData}
+                  className="p-2.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                  title="Refresh Audit Data"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Retention Status Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 text-xs">
+              <div className="bg-slate-800/70 p-3 rounded-xl border border-slate-700/60">
+                <span className="text-slate-400 block font-medium">
+                  {language === 'hi' ? 'अवधारण नीति (Retention)' : 'Retention Policy'}
+                </span>
+                <span className="text-base font-black text-amber-400 mt-0.5 block">
+                  40 {language === 'hi' ? 'दिन' : 'Days'}
+                </span>
+                <span className="text-[10px] text-slate-400">Strict Auto-Purge</span>
+              </div>
+
+              <div className="bg-slate-800/70 p-3 rounded-xl border border-slate-700/60">
+                <span className="text-slate-400 block font-medium">
+                  {language === 'hi' ? 'सक्रिय समाप्ति फोटो' : 'Active Proof Photos'}
+                </span>
+                <span className="text-base font-black text-emerald-400 mt-0.5 block">
+                  {allCompletionPhotos.length} {language === 'hi' ? 'फोटो' : 'Photos'}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {retentionAudit?.diskUsageFormatted || 'Disk Stored'}
+                </span>
+              </div>
+
+              <div className="bg-slate-800/70 p-3 rounded-xl border border-slate-700/60">
+                <span className="text-slate-400 block font-medium">
+                  {language === 'hi' ? 'स्टोरेज डायरेक्टरी' : 'Storage Directory'}
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-200 mt-1 block truncate" title="/data/uploads/completion">
+                  /data/uploads/completion
+                </span>
+                <span className="text-[10px] text-emerald-400 font-semibold">Isolated from /reference</span>
+              </div>
+
+              <div className="bg-slate-800/70 p-3 rounded-xl border border-slate-700/60">
+                <span className="text-slate-400 block font-medium">
+                  {language === 'hi' ? 'संदर्भ फोटो (Reference)' : 'Reference Photos'}
+                </span>
+                <span className="text-base font-black text-white mt-0.5 block">
+                  {language === 'hi' ? 'स्थायी (Permanent)' : 'Permanent'}
+                </span>
+                <span className="text-[10px] text-slate-400">Until Admin deletes</span>
+              </div>
+            </div>
+
+            {cleanupToast && (
+              <div className="mt-4 p-3 bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{cleanupToast}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Filter Bar */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                  {language === 'hi' ? 'कमरा अनुसार फ़िल्टर:' : 'Filter by Room:'}
+                </label>
+                <select
+                  value={completionFilterRoom}
+                  onChange={(e) => setCompletionFilterRoom(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="all">{language === 'hi' ? 'सभी कमरे (All Rooms)' : 'All Rooms'}</option>
+                  {guides.map((g) => (
+                    <option key={g.id} value={g.titleEn}>
+                      {language === 'hi' ? g.titleHi : g.titleEn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                  {language === 'hi' ? 'स्टाफ अनुसार फ़िल्टर:' : 'Filter by Staff:'}
+                </label>
+                <select
+                  value={completionFilterStaff}
+                  onChange={(e) => setCompletionFilterStaff(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                >
+                  <option value="all">{language === 'hi' ? 'सभी स्टाफ (All Staff)' : 'All Staff'}</option>
+                  {users
+                    .filter((u) => u.role === 'pantry_boy')
+                    .map((u) => (
+                      <option key={u.id} value={u.name}>
+                        {u.name} ({u.username})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg self-start sm:self-auto">
+              <span>{language === 'hi' ? 'दिखाए गए फोटो:' : 'Showing Photos:'}</span>{' '}
+              <span className="text-emerald-700 font-black">
+                {allCompletionPhotos.filter((p) => {
+                  if (completionFilterRoom !== 'all' && !p.roomName.toLowerCase().includes(completionFilterRoom.toLowerCase())) return false;
+                  if (completionFilterStaff !== 'all' && !p.pantryBoyName.toLowerCase().includes(completionFilterStaff.toLowerCase())) return false;
+                  return true;
+                }).length}
+              </span>
+            </div>
+          </div>
+
+          {/* Completion Photos Grid */}
+          {isLoadingCompletion ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+              <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
+              <span className="text-sm font-bold text-slate-600">
+                {language === 'hi' ? 'कार्य समाप्ति फोटो लोड हो रहे हैं...' : 'Loading completion photos from server...'}
+              </span>
+            </div>
+          ) : (() => {
+            const displayed = allCompletionPhotos.filter((p) => {
+              if (completionFilterRoom !== 'all' && !p.roomName.toLowerCase().includes(completionFilterRoom.toLowerCase())) return false;
+              if (completionFilterStaff !== 'all' && !p.pantryBoyName.toLowerCase().includes(completionFilterStaff.toLowerCase())) return false;
+              return true;
+            });
+
+            if (displayed.length === 0) {
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+                  <Camera className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <h4 className="font-bold text-slate-700 text-sm">
+                    {language === 'hi' ? 'कोई कार्य समाप्ति फोटो नहीं मिली' : 'No Completion Photos Found'}
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                    {language === 'hi'
+                      ? 'जब पैंट्री बॉय कार्य पूरा करके फोटो अपलोड करेंगे, वे यहाँ 40 दिनों तक प्रदर्शित होंगे।'
+                      : 'When staff upload verification photos upon completing tasks, they are archived here for 40 days.'}
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {displayed.map((photo) => {
+                  const uploadDate = new Date(photo.uploadedAt);
+                  const expireDate = photo.expiresAt ? new Date(photo.expiresAt) : new Date(uploadDate.getTime() + 40 * 24 * 60 * 60 * 1000);
+                  const daysRemaining = Math.max(0, Math.ceil((expireDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+
+                  return (
+                    <div
+                      key={photo.id}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col justify-between hover:border-emerald-400 transition-colors group"
+                    >
+                      <div>
+                        {/* Thumbnail */}
+                        <div
+                          className="relative aspect-4/3 bg-slate-900 cursor-pointer overflow-hidden"
+                          onClick={() => setPreviewCompletionPhoto(photo)}
+                        >
+                          <img
+                            src={photo.url}
+                            alt={photo.taskTitle}
+                            className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
+                          />
+
+                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-xs text-white text-[10px] font-bold">
+                            {photo.angleLabel || 'Completion Photo'}
+                          </div>
+
+                          <div className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-emerald-600/90 text-white text-[10px] font-black shadow-xs">
+                            ⏳ {daysRemaining} {language === 'hi' ? 'दिन शेष' : 'days left'}
+                          </div>
+
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                            <Maximize2 className="w-6 h-6" />
+                          </div>
+                        </div>
+
+                        {/* Details */}
+                        <div className="p-3.5 space-y-1.5">
+                          <div className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                            {photo.taskTitle}
+                          </div>
+
+                          <div className="text-[11px] font-semibold text-amber-700 flex items-center gap-1">
+                            <span>📍</span>
+                            <span>{photo.roomName}</span>
+                          </div>
+
+                          <div className="text-[11px] text-slate-600 flex items-center justify-between pt-1 border-t border-slate-100">
+                            <span className="font-bold text-slate-800">👤 {photo.pantryBoyName}</span>
+                            <span className="text-[10px] text-slate-400">({photo.pantryBoyId})</span>
+                          </div>
+
+                          <div className="text-[10px] text-slate-500 pt-1 flex items-center justify-between">
+                            <span className="font-medium flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              <span>{uploadDate.toLocaleDateString()}</span>
+                            </span>
+                            <span className="font-bold text-slate-700">
+                              {uploadDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="px-3.5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewCompletionPhoto(photo)}
+                          className="text-xs font-bold text-slate-700 hover:text-slate-950 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>{language === 'hi' ? 'बड़ा देखें' : 'Preview'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCompletionItem(photo.id, photo.taskId)}
+                          className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                          title="Delete completion photo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>{language === 'hi' ? 'हटाएं' : 'Delete'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+        </div>
+      )}
+
+      {/* Completion Photo Lightbox Modal */}
+      {previewCompletionPhoto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in"
+          onClick={() => setPreviewCompletionPhoto(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 bg-slate-950 text-white flex items-center justify-between border-b border-slate-800">
+              <div>
+                <div className="flex items-center gap-2 text-xs text-amber-400 font-bold">
+                  <span>📍 {previewCompletionPhoto.roomName}</span>
+                  <span>•</span>
+                  <span>{previewCompletionPhoto.angleLabel || 'Completion Photo'}</span>
+                </div>
+                <h4 className="font-extrabold text-sm sm:text-base text-white mt-0.5">
+                  {previewCompletionPhoto.taskTitle}
+                </h4>
+              </div>
+              <button
+                onClick={() => setPreviewCompletionPhoto(null)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Image */}
+            <div className="flex-1 flex items-center justify-center bg-black/60 p-2 overflow-hidden">
+              <img
+                src={previewCompletionPhoto.url}
+                alt="Completion Proof Preview"
+                className="max-h-[70vh] max-w-full object-contain rounded-lg"
+              />
+            </div>
+
+            {/* Footer with Metadata & Delete */}
+            <div className="p-4 bg-slate-950 text-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs border-t border-slate-800">
+              <div className="space-y-1">
+                <div>
+                  <span className="font-bold text-white">Staff:</span> {previewCompletionPhoto.pantryBoyName} ({previewCompletionPhoto.pantryBoyId})
+                  <span className="mx-2">•</span>
+                  <span className="font-bold text-white">Uploaded:</span> {new Date(previewCompletionPhoto.uploadedAt).toLocaleString()}
+                </div>
+                <div className="text-[11px] text-emerald-400">
+                  <span>🛡️ 40-Day Auto Retention • Storage: /data/uploads/completion/{previewCompletionPhoto.fileName || ''}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteCompletionItem(previewCompletionPhoto.id, previewCompletionPhoto.taskId)}
+                className="px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{language === 'hi' ? 'सर्वर से हमेशा के लिए हटाएं' : 'Delete Permanently'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

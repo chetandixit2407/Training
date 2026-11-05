@@ -3,6 +3,7 @@ import { DailyTask, User, Language } from '../types';
 import { VoiceButton } from './VoiceButton';
 import { TaskCompleteModal } from './TaskCompleteModal';
 import { AITrainingService } from '../services/aiTrainingService';
+import { StorageService } from '../services/storageService';
 import {
   CheckCircle2,
   Clock,
@@ -15,6 +16,7 @@ import {
   Maximize2,
   Calendar,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 
 interface TasksSectionProps {
@@ -100,6 +102,34 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
       }
     } catch (err) {
       console.warn('Backend task completion sync notice:', err);
+    }
+  };
+
+  const handleDeleteProofPhoto = async (taskId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const confirmMsg =
+      language === 'hi'
+        ? 'क्या आप इस कार्य समाप्ति फोटो को सर्वर से हमेशा के लिए हटाना चाहते हैं?'
+        : 'Are you sure you want to permanently delete this task completion photo from server storage?';
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await AITrainingService.deleteTaskProofPhotos({ taskId, user: currentUser });
+      if (res.success) {
+        StorageService.deleteCompletionPhotoFromStorage('', taskId);
+        const targetTask = tasks.find((t) => t.id === taskId);
+        if (targetTask) {
+          const updated: DailyTask = {
+            ...targetTask,
+            proofPhotos: [],
+            proofPhotoUrl: undefined,
+          };
+          onUpdateTask(updated);
+        }
+        if (zoomPhoto) setZoomPhoto(null);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete completion photo');
     }
   };
 
@@ -276,6 +306,16 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
                         <Check className="w-2.5 h-2.5" />
                         <span>{language === 'hi' ? 'अपलोड फोटो' : 'Uploaded Proof'}</span>
                       </div>
+                      {(currentUser?.role === 'admin' || (currentUser && currentUser.id === task.completedByUserId)) && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteProofPhoto(task.id, e)}
+                          className="absolute top-1 right-1 p-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white shadow-xs opacity-90 hover:opacity-100 transition-opacity cursor-pointer z-10"
+                          title={language === 'hi' ? 'समाप्ति फोटो हटाएं' : 'Delete completion photo'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div
@@ -338,13 +378,26 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
                     <span>{language === 'hi' ? 'फोटो अपलोड करें व पूरा करें' : 'Upload Photo & Finish'}</span>
                   </button>
                 ) : (
-                  <button
-                    onClick={() => setActiveTaskForModal(task)}
-                    className="flex-1 py-2.5 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
-                  >
-                    <Camera className="w-4 h-4 text-slate-500" />
-                    <span>{language === 'hi' ? 'फोटो बदलें / री-अपलोड' : 'Re-upload Photo'}</span>
-                  </button>
+                  <div className="flex-1 flex gap-2">
+                    <button
+                      onClick={() => setActiveTaskForModal(task)}
+                      className="flex-1 py-2.5 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer min-h-[44px]"
+                    >
+                      <Camera className="w-4 h-4 text-slate-500" />
+                      <span>{language === 'hi' ? 'फोटो बदलें' : 'Re-upload'}</span>
+                    </button>
+                    {(currentUser?.role === 'admin' || (currentUser && currentUser.id === task.completedByUserId)) && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteProofPhoto(task.id, e)}
+                        className="py-2.5 px-3 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-1 transition-all cursor-pointer min-h-[44px]"
+                        title={language === 'hi' ? 'समाप्ति फोटो हटाएं' : 'Delete completion photo'}
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600" />
+                        <span className="hidden sm:inline">{language === 'hi' ? 'हटाएं' : 'Delete'}</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

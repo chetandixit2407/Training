@@ -27,5 +27,22 @@
     ],
     "notes": "Table polished, 2 fresh bottles kept, cushions aligned",
     "proofPhotoUrl": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png"
+  },
+  {
+    "id": "test-task-2",
+    "title": "Boardroom Meeting Setup",
+    "titleEn": "Boardroom Meeting Setup",
+    "titleHi": "Boardroom Meeting Setup",
+    "roomName": "The Summit",
+    "roomNameEn": "The Summit",
+    "roomNameHi": "The Summit",
+    "status": "completed",
+    "completedAt": "2026-11-05T10:32:37.236Z",
+    "completedByUserId": "pb-101",
+    "completedByName": "Ramesh Kumar",
+    "completedByUserName": "Ramesh Kumar",
+    "proofPhotos": [],
+    "boyNotes": "Table wiped",
+    "notes": "Table wiped"
   }
 ]

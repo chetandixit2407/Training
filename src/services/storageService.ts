@@ -356,13 +356,13 @@ export const StorageService = {
       }
 
       const roomGallery = roomPhotosCache[guide.category] || guide.photos || [];
-      const primaryItem = roomGallery.find((p) => p.isPrimary);
+      const primaryItem = roomGallery.find((p) => p.isPrimary) || roomGallery[0];
       const primaryUrl = primaryItem ? primaryItem.url : '';
       const roomAnalysis = roomAnalysesCache[guide.category] || guide.aiRoomAnalysis;
 
       return {
         ...guide,
-        photoUrl: primaryUrl || (customPhoto !== undefined ? customPhoto : finalPhoto),
+        photoUrl: primaryUrl || (roomGallery.length > 0 ? (customPhoto !== undefined ? customPhoto : finalPhoto) : ''),
         incorrectPhotoUrl: customIncPhoto !== undefined ? customIncPhoto : finalIncPhoto,
         photos: roomGallery,
         aiRoomAnalysis: roomAnalysis,
@@ -384,7 +384,34 @@ export const StorageService = {
     if (primary && primary.url) {
       photoMemoryCache[`guide_photo_guide-${category}`] = primary.url;
       photoMemoryCache[`guide_photo_${category}`] = primary.url;
+      PhotoStorageDB.savePhoto(`guide_photo_guide-${category}`, primary.url);
+      PhotoStorageDB.savePhoto(`guide_photo_${category}`, primary.url);
+    } else {
+      delete photoMemoryCache[`guide_photo_guide-${category}`];
+      delete photoMemoryCache[`guide_photo_${category}`];
+      PhotoStorageDB.deletePhoto(`guide_photo_guide-${category}`);
+      PhotoStorageDB.deletePhoto(`guide_photo_${category}`);
     }
+
+    // Immediately update guide in local storage
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.VISUAL_GUIDES);
+      if (data) {
+        const guides: VisualGuide[] = JSON.parse(data);
+        const idx = guides.findIndex((g) => g.category === category || g.id === `guide-${category}`);
+        if (idx !== -1) {
+          guides[idx] = {
+            ...guides[idx],
+            photos,
+            photoUrl: primary ? primary.url : '',
+          };
+          localStorage.setItem(STORAGE_KEYS.VISUAL_GUIDES, JSON.stringify(guides));
+        }
+      }
+    } catch (e) {
+      console.warn('Notice saving local guides in setRoomPhotos:', e);
+    }
+
     broadcastUpdate('guides');
   },
 
@@ -466,27 +493,43 @@ export const StorageService = {
 
   // Real-time photo delete
   deleteRoomReferencePhoto(roomId: string): void {
-    PhotoStorageDB.savePhoto(`guide_photo_${roomId}`, '');
+    const rawCategory = roomId.replace(/^guide-/, '');
+    delete photoMemoryCache[`guide_photo_${roomId}`];
+    delete photoMemoryCache[`guide_photo_${rawCategory}`];
+    delete photoMemoryCache[`guide_photo_guide-${rawCategory}`];
+    PhotoStorageDB.deletePhoto(`guide_photo_${roomId}`);
+    PhotoStorageDB.deletePhoto(`guide_photo_${rawCategory}`);
+    PhotoStorageDB.deletePhoto(`guide_photo_guide-${rawCategory}`);
+
+    if (roomPhotosCache[rawCategory]) {
+      roomPhotosCache[rawCategory] = [];
+    }
 
     const guides = this.getVisualGuides();
-    const idx = guides.findIndex((g) => g.id === roomId);
+    const idx = guides.findIndex((g) => g.id === roomId || g.category === rawCategory);
     if (idx !== -1) {
       guides[idx] = {
         ...guides[idx],
         photoUrl: '',
+        photos: [],
         updatedAt: new Date().toISOString(),
         updatedBy: 'Admin (Deleted)',
       };
       this.saveVisualGuides(guides);
     }
+    broadcastUpdate('guides');
   },
 
   // Real-time incorrect photo upload / replace / delete
   updateRoomIncorrectPhoto(roomId: string, photoUrl: string): void {
+    const rawCategory = roomId.replace(/^guide-/, '');
     PhotoStorageDB.savePhoto(`guide_inc_${roomId}`, photoUrl);
+    PhotoStorageDB.savePhoto(`guide_inc_${rawCategory}`, photoUrl);
+    photoMemoryCache[`guide_inc_${roomId}`] = photoUrl;
+    photoMemoryCache[`guide_inc_${rawCategory}`] = photoUrl;
 
     const guides = this.getVisualGuides();
-    const idx = guides.findIndex((g) => g.id === roomId);
+    const idx = guides.findIndex((g) => g.id === roomId || g.category === rawCategory);
     if (idx !== -1) {
       guides[idx] = {
         ...guides[idx],
@@ -498,10 +541,16 @@ export const StorageService = {
   },
 
   deleteRoomIncorrectPhoto(roomId: string): void {
-    PhotoStorageDB.savePhoto(`guide_inc_${roomId}`, '');
+    const rawCategory = roomId.replace(/^guide-/, '');
+    delete photoMemoryCache[`guide_inc_${roomId}`];
+    delete photoMemoryCache[`guide_inc_${rawCategory}`];
+    delete photoMemoryCache[`guide_inc_guide-${rawCategory}`];
+    PhotoStorageDB.deletePhoto(`guide_inc_${roomId}`);
+    PhotoStorageDB.deletePhoto(`guide_inc_${rawCategory}`);
+    PhotoStorageDB.deletePhoto(`guide_inc_guide-${rawCategory}`);
 
     const guides = this.getVisualGuides();
-    const idx = guides.findIndex((g) => g.id === roomId);
+    const idx = guides.findIndex((g) => g.id === roomId || g.category === rawCategory);
     if (idx !== -1) {
       guides[idx] = {
         ...guides[idx],
@@ -510,6 +559,34 @@ export const StorageService = {
       };
       this.saveVisualGuides(guides);
     }
+    broadcastUpdate('guides');
+  },
+
+  // Delete task completion photo from client storage
+  deleteCompletionPhotoFromStorage(photoId: string, taskId?: string): void {
+    PhotoStorageDB.deletePhoto(`task_proof_${photoId}`);
+    delete photoMemoryCache[`task_proof_${photoId}`];
+    const tasks = this.getTasks();
+    let changed = false;
+    tasks.forEach((t) => {
+      if (!taskId || t.id === taskId) {
+        if (Array.isArray(t.proofPhotos)) {
+          const prevLen = t.proofPhotos.length;
+          t.proofPhotos = t.proofPhotos.filter((p) => p.id !== photoId && p.url !== photoId);
+          if (t.proofPhotos.length !== prevLen) {
+            changed = true;
+            t.proofPhotoUrl = t.proofPhotos.length > 0 ? t.proofPhotos[0].url : undefined;
+          }
+        } else if (t.proofPhotoUrl === photoId) {
+          t.proofPhotoUrl = undefined;
+          changed = true;
+        }
+      }
+    });
+    if (changed) {
+      this.saveTasks(tasks);
+    }
+    broadcastUpdate('tasks');
   },
 
   // SOPs

@@ -487,6 +487,65 @@ function saveBase64Image(base64Data: string, prefix = 'ref'): string {
   return saveReferencePhoto(base64Data, prefix);
 }
 
+/**
+ * Permanently removes an uploaded physical file from disk.
+ * Searches REFERENCE_UPLOADS_DIR, COMPLETION_UPLOADS_DIR, UPLOADS_DIR, and DATA_DIR.
+ * Returns true if at least one file was deleted.
+ */
+function deletePhysicalUploadFile(photoUrlOrPath: string | undefined | null): boolean {
+  if (!photoUrlOrPath || typeof photoUrlOrPath !== 'string') return false;
+  // Ignore data: URLs or default asset paths
+  if (
+    photoUrlOrPath.startsWith('data:image/') ||
+    photoUrlOrPath.startsWith('/src/assets/') ||
+    photoUrlOrPath.startsWith('src/assets/')
+  ) {
+    return false;
+  }
+
+  try {
+    const cleanUrl = photoUrlOrPath.split('?')[0].split('#')[0];
+    const filename = path.basename(cleanUrl);
+    if (!filename || filename === '.' || filename === '/') return false;
+
+    const candidatePaths = [
+      path.join(REFERENCE_UPLOADS_DIR, filename),
+      path.join(COMPLETION_UPLOADS_DIR, filename),
+      path.join(UPLOADS_DIR, filename),
+      path.join(DATA_DIR, filename),
+      path.join(DATA_DIR, 'uploads', filename),
+    ];
+
+    // If the path was relative to app root like "/uploads/..." or "/data/..."
+    if (cleanUrl.startsWith('/uploads/')) {
+      candidatePaths.push(path.join(__dirname, 'data', cleanUrl));
+    }
+    if (cleanUrl.startsWith('/data/')) {
+      candidatePaths.push(path.join(__dirname, cleanUrl));
+    }
+
+    let deleted = false;
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          const stat = fs.statSync(p);
+          if (stat.isFile()) {
+            fs.unlinkSync(p);
+            console.log(`[STORAGE_DELETE] Physically unlinked file from disk: ${p}`);
+            deleted = true;
+          }
+        } catch (e) {
+          console.warn(`[STORAGE_DELETE] Failed unlinking ${p}:`, e);
+        }
+      }
+    }
+    return deleted;
+  } catch (err) {
+    console.error('[STORAGE_DELETE] Error in deletePhysicalUploadFile:', err);
+    return false;
+  }
+}
+
 // Helpers for persistent Task Completion Photos (40-Day Retention Database)
 function loadCompletionPhotos(): any[] {
   try {
@@ -517,30 +576,86 @@ function cleanupExpiredCompletionPhotos(): { deletedCount: number; remainingCoun
   const now = Date.now();
   const remaining: any[] = [];
   const deletedFiles: string[] = [];
+  const expiredPhotoIds = new Set<string>();
+  const expiredUrls = new Set<string>();
 
   for (const p of photos) {
     const uploadTime = new Date(p.uploadedAt).getTime();
     const isExpired = now - uploadTime > RETENTION_MS;
     if (isExpired) {
-      try {
-        if (p.fileName) {
-          const filePath = path.join(COMPLETION_UPLOADS_DIR, p.fileName);
+      expiredPhotoIds.add(p.id);
+      if (p.url) expiredUrls.add(p.url);
+      const fileToDelete = p.fileName || (p.url && p.url.startsWith('/uploads/completion/') ? path.basename(p.url) : null);
+      if (fileToDelete) {
+        try {
+          const filePath = path.join(COMPLETION_UPLOADS_DIR, fileToDelete);
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            deletedFiles.push(p.fileName);
+            deletedFiles.push(fileToDelete);
           }
+        } catch (err) {
+          console.error('Error deleting expired completion photo file from disk:', fileToDelete, err);
         }
-      } catch (err) {
-        console.error('Error deleting expired completion photo file from disk:', p.fileName, err);
       }
     } else {
       remaining.push(p);
     }
   }
 
+  // Scan physical files in COMPLETION_UPLOADS_DIR for any file older than 40 days
+  try {
+    if (fs.existsSync(COMPLETION_UPLOADS_DIR)) {
+      const diskFiles = fs.readdirSync(COMPLETION_UPLOADS_DIR);
+      diskFiles.forEach((file) => {
+        const fullPath = path.join(COMPLETION_UPLOADS_DIR, file);
+        try {
+          const stats = fs.statSync(fullPath);
+          if (now - stats.mtimeMs > RETENTION_MS) {
+            fs.unlinkSync(fullPath);
+            if (!deletedFiles.includes(file)) {
+              deletedFiles.push(file);
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
+  } catch (e) {
+    // ignore
+  }
+
   if (deletedFiles.length > 0 || remaining.length !== photos.length) {
     saveCompletionPhotos(remaining);
     console.log(`[Photo Retention] Permanently cleaned up ${deletedFiles.length} expired task completion photos older than 40 days.`);
+  }
+
+  // Also prune expired photos from tasks.json
+  if (expiredPhotoIds.size > 0 || expiredUrls.size > 0) {
+    try {
+      const tasksList = loadTasks();
+      let tasksChanged = false;
+      tasksList.forEach((task: any) => {
+        if (Array.isArray(task.proofPhotos)) {
+          const origLen = task.proofPhotos.length;
+          task.proofPhotos = task.proofPhotos.filter((item: any) => !expiredPhotoIds.has(item.id) && !expiredUrls.has(item.url));
+          if (task.proofPhotos.length !== origLen) {
+            tasksChanged = true;
+            task.proofPhotoUrl = task.proofPhotos.length > 0 ? task.proofPhotos[0].url : undefined;
+            task.afterPhotoUrl = task.proofPhotoUrl;
+          }
+        } else if (task.proofPhotoUrl && expiredUrls.has(task.proofPhotoUrl)) {
+          task.proofPhotoUrl = undefined;
+          task.afterPhotoUrl = undefined;
+          tasksChanged = true;
+        }
+      });
+      if (tasksChanged) {
+        saveTasks(tasksList);
+      }
+    } catch (e) {
+      console.warn('Error pruning expired photos from tasks.json:', e);
+    }
   }
 
   return {
@@ -755,45 +870,30 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
 // Persistent Room Photos Management
 function loadRoomPhotos(): Record<string, any[]> {
   let photosMap: Record<string, any[]> = {};
+  let fileExisted = false;
   try {
     if (fs.existsSync(ROOM_PHOTOS_FILE)) {
       const data = fs.readFileSync(ROOM_PHOTOS_FILE, 'utf-8');
       photosMap = JSON.parse(data);
+      fileExisted = true;
     }
   } catch (err) {
     console.error('Error reading room_photos.json:', err);
   }
 
-  // Ensure every room has at least default photos
+  // Ensure every room category key exists.
+  // If the file did not exist at all, populate default photos.
+  // If the room key is undefined, populate default photos.
+  // If the room key exists as an array (even if empty []), respect the user's deletion!
   let hasChanges = false;
   Object.keys(DEFAULT_ROOM_PHOTOS).forEach((cat) => {
-    if (!photosMap[cat] || photosMap[cat].length === 0) {
+    if (photosMap[cat] === undefined) {
       photosMap[cat] = [...DEFAULT_ROOM_PHOTOS[cat]];
       hasChanges = true;
     }
   });
 
-  // Check if existing uploaded reception photo exists and isn't included
-  const existingUploadPath = path.join(UPLOADS_DIR, 'reference_reception_1793860755498_awl5.jpg');
-  if (fs.existsSync(existingUploadPath)) {
-    const existingUrl = '/uploads/reference_reception_1793860755498_awl5.jpg';
-    if (!photosMap.reception) photosMap.reception = [];
-    if (!photosMap.reception.some((p) => p.url === existingUrl)) {
-      photosMap.reception.push({
-        id: 'photo_reception_uploaded_live',
-        url: existingUrl,
-        captionHi: 'एडमिन द्वारा अपलोड किया गया वास्तविक रिसेप्शन संदर्भ फोटो',
-        captionEn: 'Actual office reception reference photo uploaded by Admin',
-        uploadedAt: '2026-11-04T12:00:00Z',
-        uploadedBy: 'Admin',
-        isPrimary: false,
-        photoType: 'reference',
-      });
-      hasChanges = true;
-    }
-  }
-
-  if (hasChanges) {
+  if (hasChanges && (!fileExisted || Object.keys(photosMap).length > 0)) {
     saveRoomPhotos(photosMap);
   }
 
@@ -862,8 +962,8 @@ function getImageDataForAI(url: string): { mimeType: string; data: string } | nu
 
 // STRICT ADMIN AUTHENTICATION MIDDLEWARE (Requirement 4)
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const userRole = (req.headers['x-user-role'] || req.body?.userRole) as string;
-  const userId = (req.headers['x-user-id'] || req.body?.userId) as string;
+  const userRole = (req.headers['x-user-role'] || req.query.userRole || req.body?.userRole) as string;
+  const userId = (req.headers['x-user-id'] || req.query.userId || req.body?.userId) as string;
 
   if (userRole !== 'admin') {
     return res.status(403).json({
@@ -1064,6 +1164,20 @@ app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req,
 
     const permanentUrl = saveBase64Image(photoBase64, `ref_${category}`);
     const existing = list[idx];
+
+    // Delete old physical file from disk if it was in uploads directory
+    if (existing && existing.url && existing.url.startsWith('/uploads/')) {
+      try {
+        const basename = path.basename(existing.url);
+        const refPath = path.join(REFERENCE_UPLOADS_DIR, basename);
+        if (fs.existsSync(refPath)) fs.unlinkSync(refPath);
+        const genPath = path.join(UPLOADS_DIR, basename);
+        if (fs.existsSync(genPath)) fs.unlinkSync(genPath);
+      } catch (unlinkErr) {
+        console.warn('Could not unlink replaced reference photo:', unlinkErr);
+      }
+    }
+
     list[idx] = {
       ...existing,
       url: permanentUrl,
@@ -1084,6 +1198,13 @@ app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req,
         kb.updatedAt = new Date().toISOString();
         saveKnowledgeBase(records);
       }
+      const guides = loadGuides();
+      const g = guides.find((item: any) => item.category === category);
+      if (g) {
+        g.photoUrl = permanentUrl;
+        g.updatedAt = new Date().toISOString();
+        saveGuides(guides);
+      }
     }
 
     res.json({ success: true, message: 'Photo replaced successfully', photos: list });
@@ -1096,11 +1217,20 @@ app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req,
 app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) => {
   try {
     const { category, photoId } = req.params;
+    const decodedId = decodeURIComponent(photoId);
     const allRoomPhotos = loadRoomPhotos();
     const list = allRoomPhotos[category] || [];
-    const idx = list.findIndex((p) => p.id === photoId);
+    const idx = list.findIndex(
+      (p) =>
+        p.id === photoId ||
+        p.id === decodedId ||
+        p.url === photoId ||
+        p.url === decodedId ||
+        path.basename(p.url || '') === photoId ||
+        path.basename(p.url || '') === decodedId
+    );
     if (idx === -1) {
-      return res.status(404).json({ error: 'Photo not found in this room' });
+      return res.status(404).json({ error: 'Photo not found in this room gallery' });
     }
 
     const removed = list.splice(idx, 1)[0];
@@ -1108,38 +1238,60 @@ app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) 
       list[0].isPrimary = true;
     }
 
-    // Unlink physical file from disk if stored in uploads directory
+    // Permanently unlink physical file from disk across all upload directories
     if (removed && removed.url) {
-      try {
-        const basename = path.basename(removed.url);
-        const diskPath = path.join(REFERENCE_UPLOADS_DIR, basename);
-        if (fs.existsSync(diskPath)) {
-          fs.unlinkSync(diskPath);
-        }
-      } catch (unlinkErr) {
-        console.warn('Could not unlink reference photo file:', unlinkErr);
-      }
+      deletePhysicalUploadFile(removed.url);
     }
 
     allRoomPhotos[category] = list;
     saveRoomPhotos(allRoomPhotos);
 
-    // Sync primary photo
+    // Sync primary photo across knowledge base
     const primaryItem = list.find((p) => p.isPrimary) || list[0];
     const records = loadKnowledgeBase();
     const kb = records.find((r) => r.category === category);
     if (kb) {
       kb.referencePhotoUrl = primaryItem ? primaryItem.url : '';
+      if (kb.incorrectPhotoUrl === removed?.url || removed?.photoType === 'incorrect') {
+        kb.incorrectPhotoUrl = undefined;
+      }
       kb.updatedAt = new Date().toISOString();
       saveKnowledgeBase(records);
     }
 
+    // Sync guides.json
+    const guides = loadGuides();
+    const g = guides.find((item: any) => item.category === category);
+    if (g) {
+      g.photoUrl = primaryItem ? primaryItem.url : '';
+      if (g.incorrectPhotoUrl === removed?.url || removed?.photoType === 'incorrect') {
+        g.incorrectPhotoUrl = undefined;
+      }
+      g.photos = list;
+      g.updatedAt = new Date().toISOString();
+      saveGuides(guides);
+    }
+
+    // Sync tasks.json if any task pointed to this reference photo
+    const tasks = loadTasks();
+    let tasksChanged = false;
+    tasks.forEach((t: any) => {
+      if (t.roomCategory === category && (!t.referencePhotoUrl || t.referencePhotoUrl === removed?.url)) {
+        t.referencePhotoUrl = primaryItem ? primaryItem.url : '';
+        tasksChanged = true;
+      }
+    });
+    if (tasksChanged) {
+      saveTasks(tasks);
+    }
+
     res.json({
       success: true,
-      message: 'Photo deleted permanently from room gallery',
+      message: 'Photo deleted permanently from disk and room gallery',
       photos: list,
     });
   } catch (err: any) {
+    console.error('Error deleting photo item:', err);
     res.status(500).json({ error: err.message || 'Failed to delete photo' });
   }
 });
@@ -1394,23 +1546,77 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
 app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
   try {
     const { category } = req.params;
-    const { photoType = 'reference' } = req.body || {};
+    const { photoType = 'reference' } = req.body || req.query || {};
     const now = new Date().toISOString();
 
+    // 1. Unlink physical files and clean room_photos gallery
+    const allRoomPhotos = loadRoomPhotos();
+    if (allRoomPhotos[category]) {
+      allRoomPhotos[category] = allRoomPhotos[category].filter((p: any) => {
+        const matchesType = photoType === 'incorrect' ? p.photoType === 'incorrect' : p.photoType !== 'incorrect';
+        if (matchesType) {
+          if (p.url) {
+            deletePhysicalUploadFile(p.url);
+          }
+          return false;
+        }
+        return true;
+      });
+      if (allRoomPhotos[category].length > 0 && !allRoomPhotos[category].some((p) => p.isPrimary)) {
+        allRoomPhotos[category][0].isPrimary = true;
+      }
+      saveRoomPhotos(allRoomPhotos);
+    }
+
+    // 2. Update knowledge base
     const records = loadKnowledgeBase();
     const target = records.find((r) => r.category === category);
     if (target) {
       if (photoType === 'incorrect') {
         target.incorrectPhotoUrl = undefined;
       } else {
-        target.referencePhotoUrl = '';
+        const remainingPrimary = allRoomPhotos[category]?.find((p) => p.isPrimary);
+        target.referencePhotoUrl = remainingPrimary ? remainingPrimary.url : '';
       }
       target.updatedAt = now;
       saveKnowledgeBase(records);
     }
 
-    res.json({ success: true, message: 'Reference photo deleted successfully' });
+    // 3. Update guides.json
+    const remainingPrimary = allRoomPhotos[category]?.find((p) => p.isPrimary);
+    const guides = loadGuides();
+    const g = guides.find((item: any) => item.category === category);
+    if (g) {
+      if (photoType === 'incorrect') {
+        g.incorrectPhotoUrl = undefined;
+      } else {
+        g.photoUrl = remainingPrimary ? remainingPrimary.url : '';
+      }
+      g.photos = allRoomPhotos[category] || [];
+      g.updatedAt = now;
+      saveGuides(guides);
+    }
+
+    // 4. Update tasks.json if reference photo changed
+    if (photoType !== 'incorrect') {
+      const tasks = loadTasks();
+      let tasksChanged = false;
+      tasks.forEach((t: any) => {
+        if (t.roomCategory === category) {
+          t.referencePhotoUrl = remainingPrimary ? remainingPrimary.url : '';
+          tasksChanged = true;
+        }
+      });
+      if (tasksChanged) saveTasks(tasks);
+    }
+
+    res.json({
+      success: true,
+      message: 'Reference photo deleted successfully from disk and room gallery',
+      photos: allRoomPhotos[category] || [],
+    });
   } catch (err: any) {
+    console.error('Error deleting room photos:', err);
     res.status(500).json({ error: err.message || 'Failed to delete photo' });
   }
 });
@@ -1789,10 +1995,13 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
         status: 'completed',
         completedAt: now,
         completedByUserId: effectiveUserId,
+        completedByName: effectiveUserName,
         completedByUserName: effectiveUserName,
+        proofPhotoUrl: primaryAfterUrl || tasksList[taskIndex].proofPhotoUrl || tasksList[taskIndex].afterPhotoUrl,
         afterPhotoUrl: primaryAfterUrl || tasksList[taskIndex].afterPhotoUrl,
         beforePhotoUrl: beforePhotoUrl || tasksList[taskIndex].beforePhotoUrl,
         proofPhotos: savedProofItems.length > 0 ? savedProofItems : (tasksList[taskIndex].proofPhotos || []),
+        boyNotes: notes ?? tasksList[taskIndex].boyNotes ?? tasksList[taskIndex].notes,
         notes: notes ?? tasksList[taskIndex].notes,
       };
       updatedTaskRecord = tasksList[taskIndex];
@@ -1800,14 +2009,21 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
       updatedTaskRecord = {
         id: taskId,
         title: taskTitle || 'Completed Task',
+        titleEn: taskTitle || 'Completed Task',
+        titleHi: taskTitle || 'सत्यापित कार्य',
         roomName: roomName || 'General Office',
+        roomNameEn: roomName || 'General Office',
+        roomNameHi: roomName || 'सामान्य कार्यालय',
         status: 'completed',
         completedAt: now,
         completedByUserId: effectiveUserId,
+        completedByName: effectiveUserName,
         completedByUserName: effectiveUserName,
+        proofPhotoUrl: primaryAfterUrl,
         afterPhotoUrl: primaryAfterUrl,
         beforePhotoUrl: beforePhotoUrl,
         proofPhotos: savedProofItems,
+        boyNotes: notes || '',
         notes: notes || '',
       };
       tasksList.push(updatedTaskRecord);
@@ -1968,11 +2184,21 @@ app.delete('/api/completion-photos/:photoId', (req, res) => {
   try {
     const { photoId } = req.params;
     const { taskId } = req.body || req.query;
-    const userRole = (req.headers['x-user-role'] || req.body?.userRole) as string;
-    const userId = (req.headers['x-user-id'] || req.body?.userId) as string;
+    const userRole = (req.headers['x-user-role'] || req.query.userRole || req.body?.userRole) as string;
+    const userId = (req.headers['x-user-id'] || req.query.userId || req.body?.userId) as string;
+    const decodedId = decodeURIComponent(photoId);
 
     const allCompletionPhotos = loadCompletionPhotos();
-    const photoIdx = allCompletionPhotos.findIndex((p: any) => p.id === photoId);
+    const photoIdx = allCompletionPhotos.findIndex((p: any) =>
+      p.id === photoId ||
+      p.id === decodedId ||
+      p.url === photoId ||
+      p.url === decodedId ||
+      p.fileName === photoId ||
+      p.fileName === decodedId ||
+      path.basename(p.url || '') === photoId ||
+      path.basename(p.url || '') === decodedId
+    );
     let removedItem: any = null;
 
     if (photoIdx !== -1) {
@@ -1980,37 +2206,42 @@ app.delete('/api/completion-photos/:photoId', (req, res) => {
 
       // Permission check: Admin or the owner pantry boy
       if (userRole !== 'admin' && userId && removedItem.pantryBoyId && removedItem.pantryBoyId !== userId) {
-        return res.status(403).json({ error: 'Permission denied to delete this photo' });
+        return res.status(403).json({ error: 'Permission denied: You can only delete photos uploaded by your account.' });
       }
 
-      // Physically delete file from /data/uploads/completion/
-      const fileToDelete = removedItem.fileName || (removedItem.url && removedItem.url.startsWith('/uploads/completion/') ? path.basename(removedItem.url) : null);
-      if (fileToDelete) {
-        try {
-          const filePath = path.join(COMPLETION_UPLOADS_DIR, fileToDelete);
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        } catch (e) {
-          console.warn('Failed to delete completion photo file from disk:', e);
-        }
-      }
+      // Physically delete file from disk across all upload directories
+      if (removedItem.url) deletePhysicalUploadFile(removedItem.url);
+      if (removedItem.fileName) deletePhysicalUploadFile(removedItem.fileName);
 
       allCompletionPhotos.splice(photoIdx, 1);
       saveCompletionPhotos(allCompletionPhotos);
+    } else {
+      // Even if not in completion_photos.json, still attempt physical deletion if matching a file
+      deletePhysicalUploadFile(photoId);
+      deletePhysicalUploadFile(decodedId);
     }
 
-    // Also remove from tasks.json
-    const targetTaskId = taskId || removedItem?.taskId;
+    // Also update tasks.json (check specified taskId or search all tasks)
     const tasksList = loadTasks();
-    let updatedTask: any = null;
+    let tasksChanged = false;
+    let targetTask: any = null;
 
-    if (targetTaskId) {
-      const taskIdx = tasksList.findIndex((t: any) => t.id === targetTaskId);
-      if (taskIdx !== -1) {
-        const task = tasksList[taskIdx];
+    tasksList.forEach((task: any) => {
+      const isTarget = !taskId || task.id === taskId || (removedItem && task.id === removedItem.taskId);
+      if (isTarget) {
         if (Array.isArray(task.proofPhotos)) {
-          task.proofPhotos = task.proofPhotos.filter((p: any) => p.id !== photoId);
+          const prevCount = task.proofPhotos.length;
+          task.proofPhotos = task.proofPhotos.filter((p: any) =>
+            p.id !== photoId &&
+            p.id !== decodedId &&
+            p.url !== photoId &&
+            p.url !== decodedId &&
+            path.basename(p.url || '') !== photoId &&
+            path.basename(p.url || '') !== decodedId
+          );
+          if (task.proofPhotos.length !== prevCount) {
+            tasksChanged = true;
+          }
           if (task.proofPhotos.length > 0) {
             task.afterPhotoUrl = task.proofPhotos[0].url;
             task.proofPhotoUrl = task.proofPhotos[0].url;
@@ -2018,25 +2249,89 @@ app.delete('/api/completion-photos/:photoId', (req, res) => {
             task.afterPhotoUrl = undefined;
             task.proofPhotoUrl = undefined;
           }
-        } else if (removedItem && task.proofPhotoUrl === removedItem.url) {
-          task.afterPhotoUrl = undefined;
-          task.proofPhotoUrl = undefined;
         }
-        tasksList[taskIdx] = task;
-        saveTasks(tasksList);
-        updatedTask = task;
+        if (
+          task.proofPhotoUrl === photoId ||
+          task.proofPhotoUrl === decodedId ||
+          (removedItem && task.proofPhotoUrl === removedItem.url) ||
+          path.basename(task.proofPhotoUrl || '') === photoId ||
+          path.basename(task.proofPhotoUrl || '') === decodedId
+        ) {
+          task.proofPhotoUrl = task.proofPhotos?.[0]?.url || undefined;
+          task.afterPhotoUrl = task.proofPhotos?.[0]?.url || undefined;
+          tasksChanged = true;
+        }
+        if (task.id === taskId || (removedItem && task.id === removedItem.taskId)) {
+          targetTask = task;
+        }
       }
+    });
+
+    if (tasksChanged) {
+      saveTasks(tasksList);
     }
 
     res.json({
       success: true,
-      message: 'Completion photo deleted successfully from disk and task record.',
+      message: 'Completion photo deleted successfully from server storage and database.',
       photoId,
-      task: updatedTask,
+      task: targetTask,
+      tasks: tasksList,
     });
   } catch (err: any) {
     console.error('Error deleting completion photo:', err);
     res.status(500).json({ error: err.message || 'Failed to delete completion photo' });
+  }
+});
+
+// DIRECT ENDPOINT: Clear/Delete proof photo from a task
+app.delete('/api/tasks/:taskId/proof-photo', (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const userRole = (req.headers['x-user-role'] || req.query.userRole || req.body?.userRole) as string;
+    const userId = (req.headers['x-user-id'] || req.query.userId || req.body?.userId) as string;
+
+    const tasksList = loadTasks();
+    const taskIdx = tasksList.findIndex((t: any) => t.id === taskId);
+    if (taskIdx === -1) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const task = tasksList[taskIdx];
+    if (userRole !== 'admin' && userId && task.completedByUserId && task.completedByUserId !== userId) {
+      return res.status(403).json({ error: 'Permission denied to delete photos from this task.' });
+    }
+
+    // Unlink all proof photo files
+    if (Array.isArray(task.proofPhotos)) {
+      task.proofPhotos.forEach((p: any) => {
+        if (p.url) deletePhysicalUploadFile(p.url);
+        if (p.fileName) deletePhysicalUploadFile(p.fileName);
+      });
+    }
+    if (task.proofPhotoUrl) deletePhysicalUploadFile(task.proofPhotoUrl);
+    if (task.afterPhotoUrl) deletePhysicalUploadFile(task.afterPhotoUrl);
+
+    // Clear from completion_photos.json
+    const allCompletionPhotos = loadCompletionPhotos();
+    const remainingPhotos = allCompletionPhotos.filter((p: any) => p.taskId !== taskId);
+    saveCompletionPhotos(remainingPhotos);
+
+    // Reset task photo fields
+    task.proofPhotos = [];
+    task.proofPhotoUrl = undefined;
+    task.afterPhotoUrl = undefined;
+    tasksList[taskIdx] = task;
+    saveTasks(tasksList);
+
+    res.json({
+      success: true,
+      message: 'Task proof photos deleted permanently.',
+      task,
+    });
+  } catch (err: any) {
+    console.error('Error deleting task proof photos:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete task proof photos' });
   }
 });
 

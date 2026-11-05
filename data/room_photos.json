@@ -117,16 +117,6 @@
       "uploadedBy": "Admin (System)",
       "isPrimary": true,
       "photoType": "reference"
-    },
-    {
-      "id": "photo_reception_uploaded_live",
-      "url": "/uploads/reference_reception_1793860755498_awl5.jpg",
-      "captionHi": "एडमिन द्वारा अपलोड किया गया वास्तविक रिसेप्शन संदर्भ फोटो",
-      "captionEn": "Actual office reception reference photo uploaded by Admin",
-      "uploadedAt": "2026-11-04T12:00:00Z",
-      "uploadedBy": "Admin",
-      "isPrimary": false,
-      "photoType": "reference"
     }
   ],
   "pantry": [
