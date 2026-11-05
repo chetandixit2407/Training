@@ -115,8 +115,9 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
           const rand = Math.floor(Math.random() * 65) + 25;
           setAudioLevel(rand);
         } else if (conversationStateRef.current === 'speaking') {
-          const rand = Math.floor(Math.random() * 80) + 20;
-          setAudioLevel(rand);
+          const realLvl = speechService.getAudioLevel();
+          const level = realLvl > 0 ? realLvl : Math.floor(Math.random() * 80) + 20;
+          setAudioLevel(level);
         } else {
           setAudioLevel(15);
         }
@@ -137,35 +138,6 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
     };
   }, [isCallActive]);
 
-  // Subscribe to SpeechService events
-  useEffect(() => {
-    const unsub = speechService.subscribe((state) => {
-      setCurrentSpeakingId(state.currentTextId);
-
-      // When AI completes speaking in an active call, automatically resume listening!
-      if (!state.isSpeaking && conversationStateRef.current === 'speaking' && isCallActiveRef.current) {
-        resumeListening();
-      }
-    });
-
-    return () => unsub();
-  }, []);
-
-  // BARGE-IN INTERRUPTION: When user speaks while AI is talking, immediately halt speech & stream!
-  const triggerBargeIn = useCallback(() => {
-    if (conversationStateRef.current === 'speaking' || speechService.isSpeaking() || isProcessingRef.current) {
-      // Abort ongoing server-sent stream if active
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-      // Stop TTS immediately
-      speechService.stop();
-      isProcessingRef.current = false;
-      setConversationState('listening');
-    }
-  }, []);
-
   // RESUME LISTENING (Automatic loop after AI speaks or barge-in)
   const resumeListening = useCallback(() => {
     if (!isCallActiveRef.current) return;
@@ -183,6 +155,38 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
     }
   }, []);
 
+  // BARGE-IN INTERRUPTION: When user speaks while AI is talking, immediately halt speech & stream!
+  const triggerBargeIn = useCallback(() => {
+    if (conversationStateRef.current === 'speaking' || speechService.isSpeaking() || isProcessingRef.current) {
+      // Abort ongoing server-sent stream if active
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      // Stop AudioContext playback immediately
+      speechService.stop();
+      isProcessingRef.current = false;
+      setConversationState('listening');
+    }
+  }, []);
+
+  // Subscribe to SpeechService events
+  useEffect(() => {
+    const unsub = speechService.subscribe((state) => {
+      setCurrentSpeakingId(state.currentTextId);
+
+      // Show SPEAKING ONLY when actual audio playback starts from speakers (Requirement 10)
+      if (state.isSpeaking) {
+        setConversationState('speaking');
+      } else if (conversationStateRef.current === 'speaking' && isCallActiveRef.current) {
+        // When AI completes speaking in an active call, automatically resume listening!
+        resumeListening();
+      }
+    });
+
+    return () => unsub();
+  }, [resumeListening]);
+
   // SUBMIT USER QUERY VIA LOW-LATENCY STREAMING
   const submitUserQuery = async (queryText: string) => {
     const cleanText = queryText.trim();
@@ -196,6 +200,9 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
       window.clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
+
+    // Fix AudioContext suspended state before query starts (Requirement 4)
+    speechService.ensureAudioContext().catch(() => {});
 
     isProcessingRef.current = true;
     setConversationState('processing');
@@ -231,15 +238,12 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
     const updatedHistory = [...messages, userMsg];
     setMessages([...updatedHistory, assistantMsg]);
 
-    // 3. Initialize Streaming TTS Session immediately
+    // 3. Initialize Streaming Audio Session immediately (Requirement 7)
     if (!isMutedRef.current) {
       speechService.startStreamingSession('hi', assistantMsgId);
     }
 
-    // Sentence extraction buffer for sub-second voice output
     let fullGeneratedText = '';
-    let sentenceBuffer = '';
-    const sentenceDelimiters = /[।!?.\n]/;
 
     try {
       await AITrainingService.streamChatWithAssistant({
@@ -247,11 +251,9 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
         user: currentUser,
         signal: abortController.signal,
         onChunk: (chunk: string) => {
-          // If aborted, do nothing
           if (abortController.signal.aborted) return;
 
           fullGeneratedText += chunk;
-          sentenceBuffer += chunk;
 
           // Update message text on screen in real time
           setMessages((prev) => {
@@ -262,35 +264,18 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
             }
             return next;
           });
-
-          // Once first token arrives, set state to speaking if audio active
-          if (conversationStateRef.current === 'processing') {
-            setConversationState(isMutedRef.current ? 'listening' : 'speaking');
-          }
-
-          // Sentence-by-sentence streaming TTS pipelining
-          if (!isMutedRef.current) {
-            const delimiterMatch = sentenceBuffer.search(sentenceDelimiters);
-            if (delimiterMatch !== -1) {
-              const completeSentence = sentenceBuffer.slice(0, delimiterMatch + 1).trim();
-              sentenceBuffer = sentenceBuffer.slice(delimiterMatch + 1);
-
-              if (completeSentence.length > 2) {
-                // Play immediately as first sentence forms without waiting for full response!
-                speechService.enqueueSentence(completeSentence);
-              }
-            }
+        },
+        // Real Gemini audio chunk received directly from server-sent event stream
+        onAudioChunk: (chunk) => {
+          if (abortController.signal.aborted) return;
+          if (!isMutedRef.current && chunk?.audio) {
+            speechService.enqueueAudioChunk(chunk.audio, chunk.mimeType, chunk.sampleRate);
           }
         },
         onDone: (finalText: string) => {
           if (abortController.signal.aborted) return;
 
           isProcessingRef.current = false;
-
-          // Enqueue any remaining sentence buffer
-          if (!isMutedRef.current && sentenceBuffer.trim().length > 0) {
-            speechService.enqueueSentence(sentenceBuffer.trim());
-          }
 
           // Mark streaming session complete and wire auto-resume callback
           if (!isMutedRef.current) {
@@ -310,6 +295,7 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
           if (abortController.signal.aborted) return;
           console.error('Streaming error:', err);
           isProcessingRef.current = false;
+          speechService.stop();
           setErrorMessage(
             language === 'hi'
               ? 'क्षमा करें भैया, कनेक्शन में समस्या हुई। कृपया दोबारा बोलें।'
@@ -323,6 +309,7 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
     } catch (err: any) {
       if (abortController.signal.aborted) return;
       isProcessingRef.current = false;
+      speechService.stop();
       console.error('Turn error:', err);
     }
   };
@@ -450,6 +437,9 @@ export const AIAssistantSection: React.FC<AIAssistantSectionProps> = ({
     setConversationState('listening');
     setLiveInterimText('');
     accumulatedSpeechRef.current = '';
+
+    // Fix AudioContext autoplay restriction on user click (Requirement 4)
+    speechService.ensureAudioContext().catch(() => {});
 
     // Cancel any active speech
     speechService.stop();

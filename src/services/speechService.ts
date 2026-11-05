@@ -1,90 +1,129 @@
 /**
- * Web Speech API text-to-speech service with Hindi (hi-IN) and English (en-US / en-IN) support.
- * Optimized for natural, polite, friendly conversational Hindi speech.
+ * Gemini Web Audio Engine & Live Speech Service
+ *
+ * Implements a high-fidelity Web Audio pipeline using browser AudioContext:
+ * 1. Decodes incoming Gemini 24kHz audio (WAV and Raw 16-bit PCM little-endian).
+ * 2. Gapless buffer scheduling via precise AudioContext clock (nextStartTime).
+ * 3. Handles browser autoplay restrictions & suspended AudioContext states on user gestures.
+ * 4. GainNode management for instant, reliable MUTE/UNMUTE.
+ * 5. Real-time AnalyserNode measuring physical speaker sound levels.
+ * 6. Accurate SPEAKING status emitted ONLY when audio physically begins playing.
+ * 7. Sub-second streaming audio chunk enqueueing & instantaneous barge-in interruption.
  */
 
-type VoiceStatusListener = (state: { isSpeaking: boolean; currentTextId: string | null; lang: 'hi' | 'en' }) => void;
+import { AITrainingService } from './aiTrainingService';
 
-/**
- * Pre-processes Hindi text so speech synthesis sounds natural, fluid, and human-like:
- * - Converts technical abbreviations and symbols to smooth spoken Hindi
- * - Cleans parenthetical English notes
- * - Adds natural breathing pauses via punctuation
- */
-function prepareHindiSpeechText(text: string): string {
-  let cleaned = text.trim();
+export type VoiceStatusListener = (state: {
+  isSpeaking: boolean;
+  currentTextId: string | null;
+  lang: 'hi' | 'en';
+  isMuted: boolean;
+  audioLevel?: number;
+}) => void;
 
-  // Strip English parentheticals often found in headers (e.g. "(WAITING AREA)", "(2 Sofas, 1 Table)")
-  cleaned = cleaned.replace(/\([A-Za-z0-9\s,–-]+\)/g, '');
+class GeminiSpeechService {
+  private audioCtx: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
+  private analyserNode: AnalyserNode | null = null;
 
-  // Conversational numbers and units
-  cleaned = cleaned
-    .replace(/23\s*°?\s*C/gi, 'तेईस डिग्री')
-    .replace(/24\s*°?\s*C/gi, 'चौबीस डिग्री')
-    .replace(/45\s*°/g, 'पैंतालीस डिग्री')
-    .replace(/1\.5\s*फ़ीट|1\.5\s*फीट/gi, 'डेढ़ फीट')
-    .replace(/8:30\s*AM/gi, 'सुबह साढ़े आठ बजे')
-    .replace(/7:30\s*PM/gi, 'शाम साढ़े सात बजे')
-    .replace(/6:30\s*PM/gi, 'शाम साढ़े छह बजे')
-    .replace(/11:00\s*AM/gi, 'सुबह ग्यारह बजे')
-    .replace(/1:30\s*PM|01:30\s*PM/gi, 'दोपहर डेढ़ बजे')
-    .replace(/4:00\s*PM/gi, 'शाम चार बजे')
-    .replace(/\bRO\b/gi, 'आर-ओ')
-    .replace(/\bAC\b/gi, 'ए-सी')
-    .replace(/\bHDMI\b/gi, 'एच-डी-एम-आई')
-    .replace(/\bVIP\b/gi, 'वी-आई-पी')
-    .replace(/\bHR\b/gi, 'एच-आर')
-    .replace(/\bTV\b/gi, 'टी-वी')
-    .replace(/\bSOP\b/gi, 'नियम');
+  // Active playing sources & scheduling clock
+  private activeSources: Set<AudioBufferSourceNode> = new Set();
+  private nextStartTime: number = 0;
+  private isPlaybackActive: boolean = false;
+  private isStreamEnded: boolean = true;
+  private onPlaybackCompleteCallback: (() => void) | null = null;
 
-  // Replace mechanical separators with natural pauses
-  cleaned = cleaned
-    .replace(/\s*•\s*/g, ', ')
-    .replace(/\s*\|\s*/g, ', ')
-    .replace(/\s*;\s*/g, ', ')
-    .replace(/\s*:\s*/g, ', ')
-    .replace(/\s*-\s*/g, ', ')
-    .replace(/\s+/g, ' ');
-
-  return cleaned.trim();
-}
-
-class SpeechService {
-  private synth: SpeechSynthesis | null = null;
-  // Keep strong reference to prevent Chromium garbage collection of active utterance
-  private activeUtterance: SpeechSynthesisUtterance | null = null;
-  private listeners: Set<VoiceStatusListener> = new Set();
+  // Audio state
+  private isMuted: boolean = false;
   private currentTextId: string | null = null;
   private currentLang: 'hi' | 'en' = 'hi';
-  private speakTimeoutId: number | null = null;
-  private isNotifying = false;
-  private pendingNotification = false;
-  private isMuted = false;
+  private listeners: Set<VoiceStatusListener> = new Set();
+  private isUnlocking: boolean = false;
+  private startTimeoutId: number | null = null;
 
   constructor() {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      this.synth = window.speechSynthesis;
-      // Pre-fetch voices
+    this.registerGlobalUnlock();
+  }
+
+  /**
+   * Unlock AudioContext on the very first user click / touch / key anywhere in the app
+   * to satisfy strict browser autoplay policies.
+   */
+  private registerGlobalUnlock(): void {
+    if (typeof window === 'undefined') return;
+
+    const unlockHandler = async () => {
       try {
-        this.synth.getVoices();
-        window.speechSynthesis.onvoiceschanged = () => {
-          this.synth?.getVoices();
-        };
+        await this.ensureAudioContext();
       } catch (e) {
-        // Ignore initialization warning
+        // will unlock on next interaction
+      }
+    };
+
+    window.addEventListener('click', unlockHandler, { passive: true });
+    window.addEventListener('touchstart', unlockHandler, { passive: true });
+    window.addEventListener('pointerdown', unlockHandler, { passive: true });
+    window.addEventListener('keydown', unlockHandler, { passive: true });
+  }
+
+  /**
+   * Initialize and resume browser AudioContext
+   */
+  public async ensureAudioContext(): Promise<AudioContext> {
+    if (typeof window === 'undefined') {
+      throw new Error('Web Audio not supported in non-browser environment');
+    }
+
+    if (!this.audioCtx) {
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtxClass) {
+        throw new Error('AudioContext not supported in this browser');
+      }
+
+      // Initialize with 24kHz target or hardware sample rate
+      try {
+        this.audioCtx = new AudioCtxClass({ sampleRate: 24000 });
+      } catch (e) {
+        // Fall back to default system sample rate
+        this.audioCtx = new AudioCtxClass();
+      }
+
+      // Construct master Web Audio graph: Source -> GainNode -> AnalyserNode -> Destination
+      this.gainNode = this.audioCtx.createGain();
+      this.gainNode.gain.setValueAtTime(this.isMuted ? 0 : 1.0, this.audioCtx.currentTime);
+
+      this.analyserNode = this.audioCtx.createAnalyser();
+      this.analyserNode.fftSize = 64;
+      this.analyserNode.smoothingTimeConstant = 0.3;
+
+      this.gainNode.connect(this.analyserNode);
+      this.analyserNode.connect(this.audioCtx.destination);
+    }
+
+    // Fix browser suspended state / autoplay restriction
+    if (this.audioCtx.state === 'suspended' && !this.isUnlocking) {
+      this.isUnlocking = true;
+      try {
+        await this.audioCtx.resume();
+      } catch (err) {
+        console.warn('AudioContext resume notice:', err);
+      } finally {
+        this.isUnlocking = false;
       }
     }
+
+    return this.audioCtx;
   }
 
   public subscribe(listener: VoiceStatusListener): () => void {
     this.listeners.add(listener);
-    // Defer initial subscription callback by a tick to avoid re-entrant setState in caller effect
     setTimeout(() => {
       if (this.listeners.has(listener)) {
         listener({
           isSpeaking: this.isSpeaking(),
           currentTextId: this.currentTextId,
           lang: this.currentLang,
+          isMuted: this.isMuted,
         });
       }
     }, 0);
@@ -94,227 +133,280 @@ class SpeechService {
   }
 
   private notify(): void {
-    if (this.isNotifying) {
-      this.pendingNotification = true;
-      return;
-    }
-    this.isNotifying = true;
-    try {
-      const state = {
-        isSpeaking: this.isSpeaking(),
-        currentTextId: this.currentTextId,
-        lang: this.currentLang,
-      };
-      this.listeners.forEach((listener) => {
-        try {
-          listener(state);
-        } catch (e) {
-          console.error('Error in voice listener:', e);
-        }
-      });
-    } finally {
-      this.isNotifying = false;
-      if (this.pendingNotification) {
-        this.pendingNotification = false;
-        this.notify();
-      }
-    }
-  }
-
-  private sentenceQueue: string[] = [];
-  private isProcessingQueue = false;
-  private isStreamEnded = true;
-  private onPlaybackCompleteCallback: (() => void) | null = null;
-
-  public isSpeaking(): boolean {
-    return !!this.synth && (this.synth.speaking || this.synth.pending || this.isProcessingQueue || this.sentenceQueue.length > 0);
-  }
-
-  public stop(): void {
-    if (this.speakTimeoutId !== null) {
-      window.clearTimeout(this.speakTimeoutId);
-      this.speakTimeoutId = null;
-    }
-
-    const wasSpeaking = this.isSpeaking() || this.activeUtterance !== null || this.currentTextId !== null;
-
-    this.sentenceQueue = [];
-    this.isProcessingQueue = false;
-    this.isStreamEnded = true;
-    this.onPlaybackCompleteCallback = null;
-
-    if (this.synth) {
+    const state = {
+      isSpeaking: this.isSpeaking(),
+      currentTextId: this.currentTextId,
+      lang: this.currentLang,
+      isMuted: this.isMuted,
+    };
+    this.listeners.forEach((listener) => {
       try {
-        this.synth.cancel();
+        listener(state);
       } catch (e) {
-        // Ignore
+        console.error('Error in voice listener:', e);
       }
-    }
-    this.activeUtterance = null;
-    this.currentTextId = null;
-    
-    // Only notify if speaking state actually changed
-    if (wasSpeaking) {
-      this.notify();
-    }
+    });
   }
 
-  public setMuted(muted: boolean): void {
-    this.isMuted = muted;
-    if (muted && this.isSpeaking()) {
-      this.stop();
-    }
+  /**
+   * ACCURATE SPEAKING STATE (Requirement 10)
+   * Returns true ONLY when audio is actively outputting to user's speakers, not merely during text generation.
+   */
+  public isSpeaking(): boolean {
+    return this.isPlaybackActive && !this.isMuted && this.activeSources.size > 0;
   }
 
   public getIsMuted(): boolean {
     return this.isMuted;
   }
 
-  private configureUtterance(utterance: SpeechSynthesisUtterance, lang: 'hi' | 'en'): void {
-    if (!this.synth) return;
-    const voices = this.synth.getVoices() || [];
-
-    if (lang === 'hi') {
-      utterance.lang = 'hi-IN';
-      const hindiVoices = voices.filter(
-        (v) => v.lang.toLowerCase().includes('hi') || v.lang.toLowerCase().includes('hindi')
-      );
-
-      if (hindiVoices.length > 0) {
-        const bestVoice =
-          hindiVoices.find((v) => {
-            const name = v.name.toLowerCase();
-            return (
-              name.includes('natural') ||
-              name.includes('online') ||
-              name.includes('hemant') ||
-              name.includes('kalpana') ||
-              name.includes('google') ||
-              name.includes('swara') ||
-              name.includes('lekha')
-            );
-          }) || hindiVoices[0];
-
-        utterance.voice = bestVoice;
+  /**
+   * MUTE / UNMUTE (Requirement 9)
+   * Instantly mutes AudioContext gain and stops playback if active.
+   */
+  public setMuted(muted: boolean): void {
+    this.isMuted = muted;
+    if (this.gainNode && this.audioCtx) {
+      try {
+        this.gainNode.gain.setValueAtTime(muted ? 0 : 1.0, this.audioCtx.currentTime);
+      } catch (e) {
+        this.gainNode.gain.value = muted ? 0 : 1.0;
       }
-      utterance.rate = 0.95;
-      utterance.pitch = 1.0;
+    }
+
+    if (muted && this.isSpeaking()) {
+      this.stop();
     } else {
-      utterance.lang = 'en-US';
-      const enVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().includes('en-in') ||
-          v.lang.toLowerCase().includes('en-us') ||
-          v.lang.toLowerCase().startsWith('en')
-      );
-      if (enVoice) {
-        utterance.voice = enVoice;
-      }
-      utterance.rate = 0.98;
-      utterance.pitch = 1.0;
+      this.notify();
     }
   }
 
   /**
-   * STREAMING TTS: Starts a continuous speech streaming session.
-   * Clears old queues, sets up language, and readies the audio engine.
+   * REAL-TIME PHYSICAL AUDIO LEVEL (Requirement 6)
+   * Reads actual frequency/time-domain data reaching the speakers
+   */
+  public getAudioLevel(): number {
+    if (!this.analyserNode || !this.isSpeaking()) {
+      return 0;
+    }
+    const dataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
+    this.analyserNode.getByteFrequencyData(dataArray);
+
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    const avg = sum / (dataArray.length || 1);
+    return Math.min(100, Math.round((avg / 255) * 100));
+  }
+
+  /**
+   * BARGE-IN & INTERRUPTION (Requirement 8)
+   * Instantly halts all active AudioBufferSourceNodes and resets the scheduling clock.
+   */
+  public stop(): void {
+    if (this.startTimeoutId !== null) {
+      window.clearTimeout(this.startTimeoutId);
+      this.startTimeoutId = null;
+    }
+
+    for (const source of this.activeSources) {
+      try {
+        source.stop(0);
+        source.disconnect();
+      } catch (e) {
+        // Source already ended or stopped
+      }
+    }
+    this.activeSources.clear();
+
+    const wasSpeaking = this.isPlaybackActive;
+    this.nextStartTime = 0;
+    this.isPlaybackActive = false;
+    this.isStreamEnded = true;
+    this.currentTextId = null;
+    this.onPlaybackCompleteCallback = null;
+
+    if (wasSpeaking) {
+      this.notify();
+    }
+  }
+
+  /**
+   * Base64 to ArrayBuffer helper
+   */
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const clean = base64.replace(/^data:audio\/[a-zA-Z0-9]+;base64,/, '');
+    const binaryString = window.atob(clean);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  /**
+   * DECODE INCOMING AUDIO (Requirement 2 & 5)
+   * Decodes WAV or Raw 16-bit PCM little-endian audio buffers into Web Audio AudioBuffers.
+   */
+  private async decodeAudioBuffer(
+    base64Data: string,
+    mimeType?: string,
+    sampleRate = 24000
+  ): Promise<AudioBuffer | null> {
+    if (!base64Data || base64Data.length < 10) return null;
+
+    const ctx = await this.ensureAudioContext();
+    const arrayBuffer = this.base64ToArrayBuffer(base64Data);
+
+    if (arrayBuffer.byteLength < 4) return null;
+
+    // Check if buffer is a WAV file (starts with "RIFF")
+    const headerCheck = new Uint8Array(arrayBuffer, 0, 4);
+    const isWav =
+      mimeType?.includes('wav') ||
+      (headerCheck[0] === 0x52 &&
+        headerCheck[1] === 0x49 &&
+        headerCheck[2] === 0x46 &&
+        headerCheck[3] === 0x46);
+
+    if (isWav) {
+      try {
+        // Clone arrayBuffer because decodeAudioData detaches the input
+        const clonedBuffer = arrayBuffer.slice(0);
+        const decoded = await ctx.decodeAudioData(clonedBuffer);
+        if (decoded && decoded.length > 0 && decoded.duration > 0) {
+          return decoded;
+        }
+      } catch (decodeErr) {
+        console.warn('Native WAV decode fell back to manual PCM parser:', decodeErr);
+      }
+    }
+
+    // Raw 16-bit PCM Little-Endian parser (audio/pcm, audio/l16, or stripped WAV)
+    try {
+      let offset = 0;
+      if (isWav && arrayBuffer.byteLength > 44) {
+        // Skip 44-byte RIFF header to read raw PCM payload
+        offset = 44;
+      }
+
+      const pcmByteLength = arrayBuffer.byteLength - offset;
+      const numSamples = Math.floor(pcmByteLength / 2);
+      if (numSamples <= 0) return null;
+
+      const int16Array = new Int16Array(arrayBuffer, offset, numSamples);
+      const float32Array = new Float32Array(numSamples);
+
+      // Verify buffer has non-zero amplitude (Requirement 5)
+      let nonZeroCount = 0;
+      for (let i = 0; i < numSamples; i++) {
+        const sample = int16Array[i];
+        float32Array[i] = sample < 0 ? sample / 32768.0 : sample / 32767.0;
+        if (sample !== 0) nonZeroCount++;
+      }
+
+      if (nonZeroCount === 0) {
+        return null; // Empty silent buffer
+      }
+
+      const audioBuffer = ctx.createBuffer(1, numSamples, sampleRate);
+      audioBuffer.getChannelData(0).set(float32Array);
+      return audioBuffer;
+    } catch (pcmErr) {
+      console.error('Failed to parse PCM audio buffer:', pcmErr);
+      return null;
+    }
+  }
+
+  /**
+   * SCHEDULE AUDIO BUFFER GAPLESSLY (Requirement 3, 7, 10)
+   * Schedules chunks onto the Web Audio timeline using precise time offsets.
+   */
+  public async scheduleAudioChunk(
+    base64Data: string,
+    mimeType?: string,
+    sampleRate = 24000
+  ): Promise<void> {
+    if (this.isMuted) return;
+
+    const buffer = await this.decodeAudioBuffer(base64Data, mimeType, sampleRate);
+    if (!buffer || buffer.length === 0 || buffer.duration === 0) return;
+
+    const ctx = await this.ensureAudioContext();
+    const now = ctx.currentTime;
+
+    // Schedule seamlessly right after previous chunk, or start in 20ms if queue dried up
+    const startTime = Math.max(now + 0.02, this.nextStartTime);
+    this.nextStartTime = startTime + buffer.duration;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.gainNode!);
+
+    this.activeSources.add(source);
+
+    // Synchronize speaking status ONLY when audio physically starts outputting (Requirement 10)
+    const delayMs = Math.max(0, (startTime - now) * 1000);
+    this.startTimeoutId = window.setTimeout(() => {
+      this.startTimeoutId = null;
+      if (!this.isMuted && this.activeSources.has(source)) {
+        if (!this.isPlaybackActive) {
+          this.isPlaybackActive = true;
+          this.notify();
+        }
+      }
+    }, delayMs);
+
+    source.onended = () => {
+      this.activeSources.delete(source);
+      if (this.activeSources.size === 0) {
+        this.nextStartTime = 0;
+        if (this.isStreamEnded) {
+          this.isPlaybackActive = false;
+          this.currentTextId = null;
+          this.notify();
+          if (this.onPlaybackCompleteCallback) {
+            const cb = this.onPlaybackCompleteCallback;
+            this.onPlaybackCompleteCallback = null;
+            cb();
+          }
+        }
+      }
+    };
+
+    source.start(startTime);
+  }
+
+  /**
+   * STREAMING TTS SESSION START
    */
   public startStreamingSession(lang: 'hi' | 'en' = 'hi', textId?: string): void {
     this.stop();
-    this.sentenceQueue = [];
-    this.isProcessingQueue = false;
-    this.isStreamEnded = false;
-    this.onPlaybackCompleteCallback = null;
     this.currentLang = lang;
     this.currentTextId = textId || 'stream';
-    this.notify();
+    this.isStreamEnded = false;
+    this.onPlaybackCompleteCallback = null;
+    this.ensureAudioContext().catch(() => {});
   }
 
   /**
-   * STREAMING TTS: Enqueues a completed sentence for immediate speech synthesis.
-   * If not currently speaking, begins playing this sentence in sub-second time!
+   * STREAMING TTS ENQUEUE SENTENCE
    */
-  public enqueueSentence(sentenceText: string): void {
+  public enqueueAudioChunk(
+    base64Data: string,
+    mimeType = 'audio/wav',
+    sampleRate = 24000
+  ): void {
     if (this.isMuted) return;
-
-    const trimmed = sentenceText.trim();
-    if (!trimmed) return;
-
-    const clean = this.currentLang === 'hi' ? prepareHindiSpeechText(trimmed) : trimmed;
-    if (!clean) return;
-
-    this.sentenceQueue.push(clean);
-
-    if (!this.isProcessingQueue) {
-      this.playNextQueuedSentence();
-    }
-  }
-
-  private playNextQueuedSentence(): void {
-    if (this.isMuted) {
-      this.sentenceQueue = [];
-      this.isProcessingQueue = false;
-      return;
-    }
-
-    if (!this.synth) return;
-
-    if (this.sentenceQueue.length === 0) {
-      this.isProcessingQueue = false;
-      if (this.isStreamEnded) {
-        this.activeUtterance = null;
-        this.currentTextId = null;
-        this.notify();
-        if (this.onPlaybackCompleteCallback) {
-          const cb = this.onPlaybackCompleteCallback;
-          this.onPlaybackCompleteCallback = null;
-          cb();
-        }
-      }
-      return;
-    }
-
-    this.isProcessingQueue = true;
-    const textToSpeak = this.sentenceQueue.shift()!;
-
-    try {
-      if (this.synth.paused) {
-        this.synth.resume();
-      }
-
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      this.activeUtterance = utterance;
-      this.configureUtterance(utterance, this.currentLang);
-
-      utterance.onstart = () => {
-        this.notify();
-      };
-
-      utterance.onend = () => {
-        this.activeUtterance = null;
-        this.playNextQueuedSentence();
-      };
-
-      utterance.onerror = (e) => {
-        const errorType = (e as any).error;
-        if (errorType !== 'canceled' && errorType !== 'interrupted') {
-          console.warn('Utterance notice:', errorType);
-        }
-        this.activeUtterance = null;
-        this.playNextQueuedSentence();
-      };
-
-      this.synth.speak(utterance);
-    } catch (err) {
-      console.warn('Failed to speak queued sentence:', err);
-      this.activeUtterance = null;
-      this.playNextQueuedSentence();
-    }
+    this.scheduleAudioChunk(base64Data, mimeType, sampleRate).catch((err) => {
+      console.warn('Failed to schedule streaming audio chunk:', err);
+    });
   }
 
   /**
-   * STREAMING TTS: Marks that the AI response stream has finished emitting chunks.
-   * When the remaining sentence queue finishes speaking, the session cleanly concludes.
+   * STREAMING TTS SESSION END
    */
   public endStreamingSession(onComplete?: () => void): void {
     this.isStreamEnded = true;
@@ -322,8 +414,8 @@ class SpeechService {
       this.onPlaybackCompleteCallback = onComplete;
     }
 
-    if (!this.isProcessingQueue && this.sentenceQueue.length === 0) {
-      this.activeUtterance = null;
+    if (this.activeSources.size === 0) {
+      this.isPlaybackActive = false;
       this.currentTextId = null;
       this.notify();
       if (this.onPlaybackCompleteCallback) {
@@ -334,15 +426,13 @@ class SpeechService {
     }
   }
 
-  public speak(text: string, lang: 'hi' | 'en' = 'hi', textId?: string): void {
+  /**
+   * UNARY AUDIO PLAYBACK (Listen to individual messages or training voice scripts)
+   */
+  public async speak(text: string, lang: 'hi' | 'en' = 'hi', textId?: string): Promise<void> {
     if (this.isMuted) return;
 
-    if (!this.synth) {
-      console.warn('Speech synthesis not available in this environment.');
-      return;
-    }
-
-    // If currently speaking this exact item, toggle off/stop
+    // Toggle off if currently speaking this exact item
     if (this.isSpeaking() && textId && this.currentTextId === textId) {
       this.stop();
       return;
@@ -350,62 +440,25 @@ class SpeechService {
 
     this.stop();
 
-    const rawClean = text.trim();
-    if (!rawClean) return;
-
-    const spokenText = lang === 'hi' ? prepareHindiSpeechText(rawClean) : rawClean;
-    if (!spokenText) return;
+    const clean = text.trim();
+    if (!clean) return;
 
     this.currentTextId = textId || 'manual';
     this.currentLang = lang;
-    this.notify();
 
-    this.speakTimeoutId = window.setTimeout(() => {
-      this.speakTimeoutId = null;
-      if (!this.synth) return;
+    try {
+      await this.ensureAudioContext();
 
-      try {
-        if (this.synth.paused) {
-          this.synth.resume();
-        }
-
-        const utterance = new SpeechSynthesisUtterance(spokenText);
-        this.activeUtterance = utterance;
-        this.configureUtterance(utterance, lang);
-
-        utterance.onstart = () => {
-          this.notify();
-        };
-
-        utterance.onend = () => {
-          if (this.activeUtterance === utterance) {
-            this.activeUtterance = null;
-            this.currentTextId = null;
-            this.notify();
-          }
-        };
-
-        utterance.onerror = (e) => {
-          const errorType = (e as any).error;
-          if (errorType !== 'canceled' && errorType !== 'interrupted') {
-            console.warn('Speech synthesis notice:', errorType);
-          }
-          if (this.activeUtterance === utterance) {
-            this.activeUtterance = null;
-            this.currentTextId = null;
-            this.notify();
-          }
-        };
-
-        this.synth.speak(utterance);
-      } catch (err) {
-        console.warn('Unable to play speech:', err);
-        this.activeUtterance = null;
-        this.currentTextId = null;
-        this.notify();
+      // Call backend Gemini TTS endpoint to get real 24kHz audio
+      const result = await AITrainingService.synthesizeSpeech(clean, lang);
+      if (result && result.audio) {
+        await this.scheduleAudioChunk(result.audio, result.mimeType, result.sampleRate);
       }
-    }, 40);
+    } catch (err) {
+      console.error('Speech synthesis playback error:', err);
+      this.stop();
+    }
   }
 }
 
-export const speechService = new SpeechService();
+export const speechService = new GeminiSpeechService();

@@ -250,8 +250,32 @@ export const AITrainingService = {
   },
 
   /**
+   * SYNTHESIZE SPEECH: Calls backend Gemini 3.8 TTS to produce real audio.
+   */
+  async synthesizeSpeech(
+    text: string,
+    lang = 'hi',
+    voiceName?: string
+  ): Promise<{ audio: string; mimeType: string; sampleRate: number }> {
+    const res = await fetch('/api/ai/synthesize-speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, lang, voiceName }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to synthesize speech: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    return data;
+  },
+
+  /**
    * REAL-TIME STREAMING: Streams conversational AI reply tokens chunk-by-chunk for sub-second voice latency.
-   * Calls onChunk(chunkText) as words arrive and onDone(fullText) when complete.
+   * Calls onChunk(chunkText) as words arrive, onAudioChunk(audioData) as Gemini audio arrives, and onDone(fullText) when complete.
    * Supports AbortSignal for instantaneous barge-in interruptions!
    */
   async streamChatWithAssistant(params: {
@@ -259,6 +283,7 @@ export const AITrainingService = {
     user?: User | null;
     signal?: AbortSignal;
     onChunk: (chunk: string) => void;
+    onAudioChunk?: (chunk: { audio: string; mimeType: string; sampleRate: number; sentence?: string }) => void;
     onDone: (fullText: string) => void;
     onError?: (err: Error) => void;
   }): Promise<void> {
@@ -310,7 +335,16 @@ export const AITrainingService = {
             if (parsed.error) {
               throw new Error(parsed.error);
             }
-            if (parsed.text) {
+            if (parsed.type === 'audio' && parsed.audio) {
+              if (params.onAudioChunk) {
+                params.onAudioChunk({
+                  audio: parsed.audio,
+                  mimeType: parsed.mimeType || 'audio/wav',
+                  sampleRate: parsed.sampleRate || 24000,
+                  sentence: parsed.sentence,
+                });
+              }
+            } else if (parsed.text) {
               fullText += parsed.text;
               params.onChunk(parsed.text);
             }
