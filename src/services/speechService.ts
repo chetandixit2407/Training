@@ -578,8 +578,16 @@ class ResilientSpeechService {
   /**
    * UNARY AUDIO PLAYBACK (Listen to individual messages or training voice scripts)
    */
-  public async speak(text: string, lang: 'hi' | 'en' = 'hi', textId?: string): Promise<void> {
-    if (this.isMuted) return;
+  public async speak(
+    text: string,
+    lang: 'hi' | 'en' = 'hi',
+    textId?: string,
+    onComplete?: () => void
+  ): Promise<void> {
+    if (this.isMuted) {
+      onComplete?.();
+      return;
+    }
 
     // Toggle off if currently speaking this exact item
     if (this.isSpeaking() && textId && this.currentTextId === textId) {
@@ -590,7 +598,10 @@ class ResilientSpeechService {
     this.stop();
 
     const clean = text.trim();
-    if (!clean) return;
+    if (!clean) {
+      onComplete?.();
+      return;
+    }
 
     this.currentTextId = textId || 'manual';
     this.currentLang = lang;
@@ -608,13 +619,17 @@ class ResilientSpeechService {
           sentenceText: clean,
           isFallback: false,
         });
+        this.isPlaybackActive = false;
+        this.currentTextId = null;
+        this.notify();
+        onComplete?.();
       } else {
         // Fall back to clean browser SpeechSynthesis
-        this.speakWithSpeechSynthesis(clean, lang);
+        this.speakWithSpeechSynthesis(clean, lang, onComplete);
       }
     } catch (err) {
       console.warn('Backend speech synthesis notice, using client SpeechSynthesis:', err);
-      this.speakWithSpeechSynthesis(clean, lang);
+      this.speakWithSpeechSynthesis(clean, lang, onComplete);
     }
   }
 }

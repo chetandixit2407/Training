@@ -29,6 +29,32 @@ export type RoomCategory =
   | 'workstations'
   | 'lights_equipment';
 
+export interface RoomPhotoItem {
+  id: string;
+  url: string;
+  captionHi?: string;
+  captionEn?: string;
+  uploadedAt: string;
+  uploadedBy?: string;
+  isPrimary?: boolean;
+  photoType?: 'reference' | 'incorrect';
+}
+
+export interface AIRoomAnalysis {
+  analyzedAt: string;
+  summaryHi: string;
+  summaryEn: string;
+  setupStandardsHi: string[];
+  setupStandardsEn: string[];
+  cleaningProcedureHi: string[];
+  cleaningProcedureEn: string[];
+  qualityStandardsHi: string[];
+  qualityStandardsEn: string[];
+  mistakesToAvoidHi: string[];
+  mistakesToAvoidEn: string[];
+  totalPhotosAnalyzed: number;
+}
+
 export interface VisualGuide {
   id: string;
   category: RoomCategory;
@@ -44,6 +70,12 @@ export interface VisualGuide {
   incorrectPhotoUrl?: string;
   incorrectCaptionHi?: string;
   incorrectCaptionEn?: string;
+
+  // Multi-photo gallery per room
+  photos?: RoomPhotoItem[];
+
+  // Multi-photo AI Analysis
+  aiRoomAnalysis?: AIRoomAnalysis;
   
   // Specific visual placement guidance
   furniturePlacementHi: string[];
@@ -186,33 +218,3 @@ export interface TrainingKnowledgeRecord {
   updatedAt: string;
 }
 
-export interface AIMessage {
-  id: string;
-  sender: 'user' | 'assistant';
-  text: string;
-  timestamp: string;
-  audioText?: string;
-  languageDetected?: 'hi' | 'en' | 'hinglish';
-  referencedRooms?: string[];
-  followUpSuggestions?: string[];
-  fromVoice?: boolean;
-}
-
-export interface AIAnalysisResult {
-  category: RoomCategory;
-  titleHi: string;
-  titleEn: string;
-  summaryHi: string;
-  summaryEn: string;
-  steps: TrainingInstructionStep[];
-  cleaningProcedureHi: string;
-  cleaningProcedureEn: string;
-  expectedResultsHi: string;
-  expectedResultsEn: string;
-  qualityStandardsHi: string[];
-  qualityStandardsEn: string[];
-  mistakesToAvoidHi: string[];
-  mistakesToAvoidEn: string[];
-  voiceScriptHi: string;
-  voiceScriptEn: string;
-}

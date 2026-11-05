@@ -1,13 +1,13 @@
 import {
   TrainingKnowledgeRecord,
   TrainingInstructionVersion,
-  AIAnalysisResult,
-  AIMessage,
   User,
+  RoomPhotoItem,
+  AIRoomAnalysis,
 } from '../types';
 
 /**
- * Service to interact with the backend Gemini-powered AI Training and Knowledge endpoints.
+ * Service to interact with the backend Training and Knowledge endpoints.
  * Enforces admin authorization headers ('x-user-id' and 'x-user-role') on mutation endpoints.
  */
 
@@ -56,77 +56,6 @@ export const AITrainingService = {
       console.error('Error fetching knowledge versions:', err);
       return [];
     }
-  },
-
-  /**
-   * ADMIN ONLY: Analyze an uploaded reference photograph using Gemini 3.8 Flash Vision.
-   * Generates step-by-step instructions, cleaning procedures, quality standards, and voice scripts.
-   */
-  async analyzeReferencePhoto(params: {
-    photoBase64: string;
-    mimeType?: string;
-    category: string;
-    roomName: string;
-    adminPrompt?: string;
-    user?: User | null;
-  }): Promise<AIAnalysisResult> {
-    const res = await fetch('/api/ai/analyze-photo', {
-      method: 'POST',
-      headers: getAuthHeaders(params.user),
-      body: JSON.stringify({
-        photoBase64: params.photoBase64,
-        mimeType: params.mimeType || 'image/jpeg',
-        category: params.category,
-        roomName: params.roomName,
-        adminPrompt: params.adminPrompt,
-        userRole: params.user?.role,
-        userId: params.user?.id,
-      }),
-    });
-
-    if (res.status === 403) {
-      throw new Error('Access Denied: Only authenticated Admin accounts can analyze reference photos and generate training.');
-    }
-
-    if (!res.ok) {
-      const errorJson = await res.json().catch(() => ({}));
-      throw new Error(errorJson.error || `Vision analysis failed: ${res.statusText}`);
-    }
-
-    const json = await res.json();
-    return json.data;
-  },
-
-  /**
-   * ADMIN ONLY: Convert spoken natural instructions into structured training rules.
-   */
-  async learnFromVoiceInstruction(params: {
-    spokenText: string;
-    categoryHint?: string;
-    user?: User | null;
-  }): Promise<{ data: AIAnalysisResult; originalSpeech: string }> {
-    const res = await fetch('/api/ai/voice-instruction', {
-      method: 'POST',
-      headers: getAuthHeaders(params.user),
-      body: JSON.stringify({
-        spokenText: params.spokenText,
-        categoryHint: params.categoryHint,
-        userRole: params.user?.role,
-        userId: params.user?.id,
-      }),
-    });
-
-    if (res.status === 403) {
-      throw new Error('Access Denied: Only Admin can update training via voice instructions.');
-    }
-
-    if (!res.ok) {
-      const errorJson = await res.json().catch(() => ({}));
-      throw new Error(errorJson.error || `Voice interpretation failed: ${res.statusText}`);
-    }
-
-    const json = await res.json();
-    return json;
   },
 
   /**
@@ -208,6 +137,243 @@ export const AITrainingService = {
       const errorJson = await res.json().catch(() => ({}));
       throw new Error(errorJson.error || `Failed to delete instruction: ${res.statusText}`);
     }
+  },
+
+  /**
+   * GET ALL ROOM REFERENCE PHOTOS & AI ANALYSES
+   */
+  async getAllRoomsPhotos(): Promise<{
+    photosByRoom: Record<string, RoomPhotoItem[]>;
+    analysesByRoom: Record<string, AIRoomAnalysis>;
+  }> {
+    try {
+      const res = await fetch('/api/photos/all-rooms');
+      if (!res.ok) throw new Error('Failed to fetch room photos');
+      const data = await res.json();
+      return {
+        photosByRoom: data.photosByRoom || {},
+        analysesByRoom: data.analysesByRoom || {},
+      };
+    } catch (err) {
+      console.warn('Error fetching all room photos:', err);
+      return { photosByRoom: {}, analysesByRoom: {} };
+    }
+  },
+
+  /**
+   * GET PHOTOS FOR A SINGLE ROOM
+   */
+  async getRoomPhotos(category: string): Promise<{
+    photos: RoomPhotoItem[];
+    analysis: AIRoomAnalysis | null;
+  }> {
+    try {
+      const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}`);
+      if (!res.ok) throw new Error('Failed to fetch room photos');
+      const data = await res.json();
+      return {
+        photos: data.photos || [],
+        analysis: data.analysis || null,
+      };
+    } catch (err) {
+      console.warn(`Error fetching photos for room ${category}:`, err);
+      return { photos: [], analysis: null };
+    }
+  },
+
+  /**
+   * ADMIN ONLY: Upload MULTIPLE reference photos at once for a room
+   */
+  async uploadMultipleRoomPhotos(params: {
+    category: string;
+    roomName?: string;
+    photos: Array<{
+      photoBase64: string;
+      captionHi?: string;
+      captionEn?: string;
+      isPrimary?: boolean;
+      photoType?: 'reference' | 'incorrect';
+    }>;
+    user?: User | null;
+  }): Promise<{ success: boolean; photos: RoomPhotoItem[]; message: string }> {
+    const res = await fetch('/api/photos/upload-multiple', {
+      method: 'POST',
+      headers: getAuthHeaders(params.user),
+      body: JSON.stringify({
+        category: params.category,
+        roomName: params.roomName,
+        photos: params.photos,
+        adminName: params.user?.name || 'Admin',
+        userRole: params.user?.role,
+        userId: params.user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only authenticated Admin accounts can upload reference photos.');
+    }
+
+    if (!res.ok) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.error || `Failed to upload photos: ${res.statusText}`);
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Set a specific photo as primary for a room
+   */
+  async setPrimaryRoomPhoto(
+    category: string,
+    photoId: string,
+    user?: User | null
+  ): Promise<{ success: boolean; photos: RoomPhotoItem[] }> {
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}/item/${encodeURIComponent(photoId)}/primary`, {
+      method: 'POST',
+      headers: getAuthHeaders(user),
+      body: JSON.stringify({
+        userRole: user?.role,
+        userId: user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can change primary photo.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to set primary photo');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Update a photo caption
+   */
+  async updateRoomPhotoCaption(params: {
+    category: string;
+    photoId: string;
+    captionHi?: string;
+    captionEn?: string;
+    user?: User | null;
+  }): Promise<{ success: boolean; photos: RoomPhotoItem[] }> {
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(params.category)}/item/${encodeURIComponent(params.photoId)}/caption`, {
+      method: 'POST',
+      headers: getAuthHeaders(params.user),
+      body: JSON.stringify({
+        captionHi: params.captionHi,
+        captionEn: params.captionEn,
+        userRole: params.user?.role,
+        userId: params.user?.id,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to update caption');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Replace an individual photo with a new image
+   */
+  async replaceRoomPhotoItem(params: {
+    category: string;
+    photoId: string;
+    photoBase64: string;
+    captionHi?: string;
+    captionEn?: string;
+    user?: User | null;
+  }): Promise<{ success: boolean; photos: RoomPhotoItem[] }> {
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(params.category)}/item/${encodeURIComponent(params.photoId)}/replace`, {
+      method: 'POST',
+      headers: getAuthHeaders(params.user),
+      body: JSON.stringify({
+        photoBase64: params.photoBase64,
+        captionHi: params.captionHi,
+        captionEn: params.captionEn,
+        adminName: params.user?.name || 'Admin',
+        userRole: params.user?.role,
+        userId: params.user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can replace photos.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to replace photo');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Delete an individual photo from a room gallery
+   */
+  async deleteRoomPhotoItem(
+    category: string,
+    photoId: string,
+    user?: User | null
+  ): Promise<{ success: boolean; photos: RoomPhotoItem[] }> {
+    const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}/item/${encodeURIComponent(photoId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(user),
+      body: JSON.stringify({
+        userRole: user?.role,
+        userId: user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can delete photos.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to delete photo');
+    }
+
+    return await res.json();
+  },
+
+  /**
+   * ADMIN ONLY: Trigger AI Multi-Photo Analysis for a room
+   * AI analyzes ALL reference photos of the room together using Gemini 3.8 Flash
+   */
+  async analyzeRoomPhotosWithAI(
+    category: string,
+    roomName?: string,
+    user?: User | null
+  ): Promise<{ success: boolean; analysis: AIRoomAnalysis; message: string }> {
+    const res = await fetch('/api/ai/analyze-room-photos', {
+      method: 'POST',
+      headers: getAuthHeaders(user),
+      body: JSON.stringify({
+        category,
+        roomName,
+        userRole: user?.role,
+        userId: user?.id,
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can request AI room analysis.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'AI analysis failed');
+    }
+
+    return await res.json();
   },
 
   /**
@@ -298,4 +464,6 @@ export const AITrainingService = {
     return data;
   },
 };
+
+
 

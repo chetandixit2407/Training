@@ -94,7 +94,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pt-5">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 pt-5 pb-20 md:pb-8">
         {currentTab === 'training' && (
           <TrainingSection
             guides={guides}
@@ -104,7 +104,6 @@ export default function App() {
             onRefreshData={refreshAllData}
           />
         )}
-
 
         {currentTab === 'sops' && (
           <SOPsSection
@@ -143,8 +142,6 @@ export default function App() {
           />
         )}
       </main>
-
-
 
       {/* Mobile Bottom Navigation Bar (Smartphones & Tablets) */}
       <MobileBottomNav

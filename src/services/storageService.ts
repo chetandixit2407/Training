@@ -1,4 +1,4 @@
-import { User, VisualGuide, SOP, DailyTask, Language } from '../types';
+import { User, VisualGuide, SOP, DailyTask, Language, RoomPhotoItem, AIRoomAnalysis } from '../types';
 import {
   DEFAULT_USERS,
   DEFAULT_VISUAL_GUIDES,

@@ -16,10 +16,7 @@ import {
   CheckSquare,
   Lock,
   Clock,
-  Sparkles,
-  Bot,
 } from 'lucide-react';
-import { AdminTrainingKnowledge } from './AdminTrainingKnowledge';
 
 interface AdminSectionProps {
   users: User[];
@@ -39,7 +36,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   language,
   onRefreshData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'ai_training' | 'guides' | 'users' | 'create_task'>('ai_training');
+  const [activeTab, setActiveTab] = useState<'guides' | 'users' | 'create_task'>('guides');
 
   // User form state
   const [newUserName, setNewUserName] = useState('');
@@ -250,22 +247,12 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
       {/* Admin Subtabs */}
       <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 rounded-xl overflow-x-auto no-scrollbar">
         <button
-          onClick={() => setActiveTab('ai_training')}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer min-h-[40px] ${
-            activeTab === 'ai_training' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Sparkles className="w-4 h-4 text-slate-950" />
-          <span>{language === 'hi' ? 'AI विज़न व ट्रेनिंग हब' : 'AI Vision & Training Hub'}</span>
-        </button>
-
-        <button
           onClick={() => setActiveTab('guides')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer min-h-[40px] ${
-            activeTab === 'guides' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            activeTab === 'guides' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <ImageIcon className="w-4 h-4 text-amber-600" />
+          <ImageIcon className="w-4 h-4 text-slate-950" />
           <span>{language === 'hi' ? 'फोटो व प्रशिक्षण संपादक' : 'Guides & Photos Editor'}</span>
         </button>
 
@@ -289,15 +276,6 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
           <span>{language === 'hi' ? 'नया कार्य असाइन करें' : 'Create & Assign Task'}</span>
         </button>
       </div>
-
-      {/* TAB 0: AI VISION & REFERENCE PHOTO TRAINING HUB */}
-      {activeTab === 'ai_training' && (
-        <AdminTrainingKnowledge
-          currentUser={currentUser}
-          language={language}
-          onRefreshData={onRefreshData}
-        />
-      )}
 
       {/* TAB 1: GUIDES & PHOTOS EDITOR */}
       {activeTab === 'guides' && (

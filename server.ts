@@ -5,7 +5,6 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
-import { WebSocketServer } from 'ws';
 
 dotenv.config();
 
@@ -34,6 +33,8 @@ const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'training_knowledge.json');
 const GUIDES_FILE = path.join(DATA_DIR, 'guides.json');
+const ROOM_PHOTOS_FILE = path.join(DATA_DIR, 'room_photos.json');
+const ROOM_ANALYSIS_FILE = path.join(DATA_DIR, 'room_analysis.json');
 
 // Ensure data and uploads directories exist
 if (!fs.existsSync(DATA_DIR)) {
@@ -474,6 +475,262 @@ function saveGuides(guides: any[]): void {
   }
 }
 
+// Default Seed Photos for each room gallery
+const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
+  prestige_loft: [
+    {
+      id: 'photo_prestige_1',
+      url: '/src/assets/images/office_reception_lounge_1793614168526.jpg',
+      captionHi: '2 सोफे, 45° फूले हुए कुशन व सेंटर टेबल व्यवस्था',
+      captionEn: '2 sofas, 45° plumped cushions & center table setup',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  the_skyline: [
+    {
+      id: 'photo_skyline_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'द स्काईलाइन: 8-सीटर कॉन्फ्रेंस टेबल व पानी की बोतलें',
+      captionEn: 'The Skyline: 8-seater conference table & fresh water setup',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  the_community: [
+    {
+      id: 'photo_community_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'द कम्युनिटी: 10 कुर्सियां एक सीध में व स्टेशनरी पैड',
+      captionEn: 'The Community: 10 chairs aligned with stationery pads',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  the_summit: [
+    {
+      id: 'photo_summit_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'द समिट: बोर्डरूम कुर्सियां व एचडीएमआई केबल बॉक्स',
+      captionEn: 'The Summit: Boardroom seating & HDMI cable console',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  wcr_air: [
+    {
+      id: 'photo_wcrair_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'डब्ल्यूसीआर एयर: क्विक-मीट राउंड टेबल व 4 कुर्सियां',
+      captionEn: 'WCR Air: Quick-meet table and 4 aligned chairs',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  elegance_suite: [
+    {
+      id: 'photo_elegance_1',
+      url: '/src/assets/images/office_cabin_desk_1793614184873.jpg',
+      captionHi: 'एलिगेंस सुइट: सीनियर मैनेजर डेस्क व विज़िटर कुर्सियां',
+      captionEn: 'Elegance Suite: Senior manager desk and visitor chairs',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  prime_loft: [
+    {
+      id: 'photo_primeloft_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'प्राइम लॉफ्ट: 6 कुर्सियां व टीवी प्रेजेंटेशन सेटअप',
+      captionEn: 'Prime Loft: 6 chairs and TV presentation setup',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  regency: [
+    {
+      id: 'photo_regency_1',
+      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+      captionHi: 'रीजेंसी: वीआईपी डिस्कशन टेबल, लेदर कुर्सियां',
+      captionEn: 'Regency: VIP discussion table, executive chairs',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  lalit_sir_cabin: [
+    {
+      id: 'photo_lalitsir_1',
+      url: '/src/assets/images/office_cabin_desk_1793614184873.jpg',
+      captionHi: 'ललित सर डेस्क: राइट लेदर कोस्टर पर पानी व उल्टा गिलास',
+      captionEn: 'Lalit Sir desk: Right leather coaster with carafe & inverted glass',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  reception: [
+    {
+      id: 'photo_reception_1',
+      url: '/src/assets/images/office_reception_lounge_1793614168526.jpg',
+      captionHi: 'रिसेप्शन लाउंज: विजिटर सोफा, कुशन 45° व विजिटर डायरी',
+      captionEn: 'Reception lounge: Visitor sofa, 45° cushions & guest directory',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  pantry: [
+    {
+      id: 'photo_pantry_1',
+      url: '/src/assets/images/office_pantry_setup_1793614167563.jpg',
+      captionHi: 'पैंट्री काउंटर: कॉफी वेंडिंग मशीन, ट्रे व कप रैक सफाई',
+      captionEn: 'Pantry counter: Coffee machine, trays & clean cup rack',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  lights_equipment: [
+    {
+      id: 'photo_lights_1',
+      url: '/src/assets/images/office_switchboard_lights_1793614186214.jpg',
+      captionHi: 'स्विच बोर्ड मार्किंग, एसी रिमोट व लाइटिंग कंट्रोल',
+      captionEn: 'Switchboard labels, AC remote & lighting control panel',
+      uploadedAt: '2026-11-02T08:30:00Z',
+      uploadedBy: 'Admin (System)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+};
+
+// Persistent Room Photos Management
+function loadRoomPhotos(): Record<string, any[]> {
+  let photosMap: Record<string, any[]> = {};
+  try {
+    if (fs.existsSync(ROOM_PHOTOS_FILE)) {
+      const data = fs.readFileSync(ROOM_PHOTOS_FILE, 'utf-8');
+      photosMap = JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading room_photos.json:', err);
+  }
+
+  // Ensure every room has at least default photos
+  let hasChanges = false;
+  Object.keys(DEFAULT_ROOM_PHOTOS).forEach((cat) => {
+    if (!photosMap[cat] || photosMap[cat].length === 0) {
+      photosMap[cat] = [...DEFAULT_ROOM_PHOTOS[cat]];
+      hasChanges = true;
+    }
+  });
+
+  // Check if existing uploaded reception photo exists and isn't included
+  const existingUploadPath = path.join(UPLOADS_DIR, 'reference_reception_1793860755498_awl5.jpg');
+  if (fs.existsSync(existingUploadPath)) {
+    const existingUrl = '/uploads/reference_reception_1793860755498_awl5.jpg';
+    if (!photosMap.reception) photosMap.reception = [];
+    if (!photosMap.reception.some((p) => p.url === existingUrl)) {
+      photosMap.reception.push({
+        id: 'photo_reception_uploaded_live',
+        url: existingUrl,
+        captionHi: 'एडमिन द्वारा अपलोड किया गया वास्तविक रिसेप्शन संदर्भ फोटो',
+        captionEn: 'Actual office reception reference photo uploaded by Admin',
+        uploadedAt: '2026-11-04T12:00:00Z',
+        uploadedBy: 'Admin',
+        isPrimary: false,
+        photoType: 'reference',
+      });
+      hasChanges = true;
+    }
+  }
+
+  if (hasChanges) {
+    saveRoomPhotos(photosMap);
+  }
+
+  return photosMap;
+}
+
+function saveRoomPhotos(data: Record<string, any[]>): void {
+  try {
+    fs.writeFileSync(ROOM_PHOTOS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving room_photos.json:', err);
+  }
+}
+
+// Persistent Room Analysis Management
+function loadRoomAnalysis(): Record<string, any> {
+  try {
+    if (fs.existsSync(ROOM_ANALYSIS_FILE)) {
+      const data = fs.readFileSync(ROOM_ANALYSIS_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading room_analysis.json:', err);
+  }
+  return {};
+}
+
+function saveRoomAnalysis(data: Record<string, any>): void {
+  try {
+    fs.writeFileSync(ROOM_ANALYSIS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving room_analysis.json:', err);
+  }
+}
+
+// Helper to extract image base64 data for AI multimodal analysis
+function getImageDataForAI(url: string): { mimeType: string; data: string } | null {
+  if (!url) return null;
+  if (url.startsWith('data:image/')) {
+    const match = url.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (match) {
+      const mime = match[1] === 'jpeg' ? 'image/jpeg' : `image/${match[1]}`;
+      return { mimeType: mime, data: match[2] };
+    }
+  }
+  try {
+    let filePath = '';
+    if (url.startsWith('/uploads/')) {
+      filePath = path.join(UPLOADS_DIR, path.basename(url));
+    } else if (url.startsWith('/src/assets/images/')) {
+      filePath = path.join(__dirname, url);
+    } else if (url.startsWith('src/assets/images/')) {
+      filePath = path.join(__dirname, url);
+    }
+    if (filePath && fs.existsSync(filePath)) {
+      const buf = fs.readFileSync(filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+      return { mimeType: mime, data: buf.toString('base64') };
+    }
+  } catch (e) {
+    console.warn('Error reading image for AI analysis:', e);
+  }
+  return null;
+}
+
 // STRICT ADMIN AUTHENTICATION MIDDLEWARE (Requirement 4)
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const userRole = (req.headers['x-user-role'] || req.body?.userRole) as string;
@@ -492,7 +749,382 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 // API ENDPOINTS
 // ==========================================
 
-// PHOTO MANAGEMENT (Requirement 2: Permanent Reference Photo Upload & Delete)
+// 1. GET ALL ROOM REFERENCE PHOTOS & AI ANALYSES (Accessible to Pantry Boys & Admins)
+app.get('/api/photos/all-rooms', (req, res) => {
+  const photos = loadRoomPhotos();
+  const analyses = loadRoomAnalysis();
+  res.json({
+    success: true,
+    photosByRoom: photos,
+    analysesByRoom: analyses,
+  });
+});
+
+// 2. GET SINGLE ROOM REFERENCE PHOTOS
+app.get('/api/photos/room/:category', (req, res) => {
+  const { category } = req.params;
+  const photos = loadRoomPhotos();
+  const analyses = loadRoomAnalysis();
+  res.json({
+    success: true,
+    category,
+    photos: photos[category] || [],
+    analysis: analyses[category] || null,
+  });
+});
+
+// 3. UPLOAD MULTIPLE REFERENCE PHOTOS AT ONCE (Admin only)
+app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
+  try {
+    const { category, roomName, photos } = req.body;
+    if (!category) {
+      return res.status(400).json({ error: 'Room category is required' });
+    }
+    if (!Array.isArray(photos) || photos.length === 0) {
+      return res.status(400).json({ error: 'Array of photo objects is required' });
+    }
+
+    const allRoomPhotos = loadRoomPhotos();
+    if (!allRoomPhotos[category]) {
+      allRoomPhotos[category] = [];
+    }
+
+    const now = new Date().toISOString();
+    const adminName = (req.body?.adminName || req.headers['x-user-name'] || 'Admin') as string;
+    const addedItems: any[] = [];
+
+    photos.forEach((p: any, idx: number) => {
+      if (!p.photoBase64) return;
+      const permanentUrl = saveBase64Image(p.photoBase64, `ref_${category}`);
+      const isFirst = allRoomPhotos[category].length === 0 && idx === 0;
+      const newItem = {
+        id: `photo_${category}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        url: permanentUrl,
+        captionHi: p.captionHi || `${roomName || category} संदर्भ फोटो #${allRoomPhotos[category].length + 1}`,
+        captionEn: p.captionEn || `${roomName || category} reference angle #${allRoomPhotos[category].length + 1}`,
+        uploadedAt: now,
+        uploadedBy: adminName,
+        isPrimary: p.isPrimary ?? isFirst,
+        photoType: p.photoType || 'reference',
+      };
+      allRoomPhotos[category].push(newItem);
+      addedItems.push(newItem);
+    });
+
+    // Ensure at least one photo is primary
+    const hasPrimary = allRoomPhotos[category].some((p) => p.isPrimary);
+    if (!hasPrimary && allRoomPhotos[category].length > 0) {
+      allRoomPhotos[category][0].isPrimary = true;
+    }
+
+    saveRoomPhotos(allRoomPhotos);
+
+    // Sync primary photo to knowledge base & visual guide
+    const primaryItem = allRoomPhotos[category].find((p) => p.isPrimary) || allRoomPhotos[category][0];
+    if (primaryItem) {
+      const records = loadKnowledgeBase();
+      const kb = records.find((r) => r.category === category);
+      if (kb) {
+        kb.referencePhotoUrl = primaryItem.url;
+        kb.updatedAt = now;
+        saveKnowledgeBase(records);
+      }
+
+      const guides = loadGuides();
+      const g = guides.find((item: any) => item.category === category);
+      if (g) {
+        g.photoUrl = primaryItem.url;
+        g.updatedAt = now;
+        saveGuides(guides);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `${addedItems.length} photos uploaded and saved permanently for ${roomName || category}!`,
+      photos: allRoomPhotos[category],
+      added: addedItems,
+    });
+  } catch (err: any) {
+    console.error('Error in /api/photos/upload-multiple:', err);
+    res.status(500).json({ error: err.message || 'Failed to upload photos' });
+  }
+});
+
+// 4. SET PHOTO AS PRIMARY (Admin only)
+app.post('/api/photos/room/:category/item/:photoId/primary', requireAdmin, (req, res) => {
+  try {
+    const { category, photoId } = req.params;
+    const allRoomPhotos = loadRoomPhotos();
+    const list = allRoomPhotos[category] || [];
+    let found = false;
+    let primaryUrl = '';
+
+    list.forEach((p) => {
+      if (p.id === photoId) {
+        p.isPrimary = true;
+        primaryUrl = p.url;
+        found = true;
+      } else {
+        p.isPrimary = false;
+      }
+    });
+
+    if (!found) {
+      return res.status(404).json({ error: 'Photo not found in this room gallery' });
+    }
+
+    allRoomPhotos[category] = list;
+    saveRoomPhotos(allRoomPhotos);
+
+    // Sync knowledge base
+    const records = loadKnowledgeBase();
+    const kb = records.find((r) => r.category === category);
+    if (kb && primaryUrl) {
+      kb.referencePhotoUrl = primaryUrl;
+      kb.updatedAt = new Date().toISOString();
+      saveKnowledgeBase(records);
+    }
+
+    res.json({
+      success: true,
+      message: 'Primary reference photo set successfully',
+      photos: list,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to set primary photo' });
+  }
+});
+
+// 5. UPDATE PHOTO CAPTION (Admin only)
+app.post('/api/photos/room/:category/item/:photoId/caption', requireAdmin, (req, res) => {
+  try {
+    const { category, photoId } = req.params;
+    const { captionHi, captionEn } = req.body;
+    const allRoomPhotos = loadRoomPhotos();
+    const list = allRoomPhotos[category] || [];
+    const item = list.find((p) => p.id === photoId);
+    if (!item) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    if (captionHi !== undefined) item.captionHi = captionHi;
+    if (captionEn !== undefined) item.captionEn = captionEn;
+    allRoomPhotos[category] = list;
+    saveRoomPhotos(allRoomPhotos);
+
+    res.json({ success: true, message: 'Caption updated', photos: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update caption' });
+  }
+});
+
+// 6. REPLACE INDIVIDUAL PHOTO (Admin only)
+app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req, res) => {
+  try {
+    const { category, photoId } = req.params;
+    const { photoBase64, captionHi, captionEn } = req.body;
+    if (!photoBase64) {
+      return res.status(400).json({ error: 'New photo base64 is required' });
+    }
+    const allRoomPhotos = loadRoomPhotos();
+    const list = allRoomPhotos[category] || [];
+    const idx = list.findIndex((p) => p.id === photoId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Photo not found to replace' });
+    }
+
+    const permanentUrl = saveBase64Image(photoBase64, `ref_${category}`);
+    const existing = list[idx];
+    list[idx] = {
+      ...existing,
+      url: permanentUrl,
+      captionHi: captionHi ?? existing.captionHi,
+      captionEn: captionEn ?? existing.captionEn,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: (req.body?.adminName || 'Admin') as string,
+    };
+
+    allRoomPhotos[category] = list;
+    saveRoomPhotos(allRoomPhotos);
+
+    if (list[idx].isPrimary) {
+      const records = loadKnowledgeBase();
+      const kb = records.find((r) => r.category === category);
+      if (kb) {
+        kb.referencePhotoUrl = permanentUrl;
+        kb.updatedAt = new Date().toISOString();
+        saveKnowledgeBase(records);
+      }
+    }
+
+    res.json({ success: true, message: 'Photo replaced successfully', photos: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to replace photo' });
+  }
+});
+
+// 7. DELETE INDIVIDUAL PHOTO FROM ROOM (Admin only)
+app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) => {
+  try {
+    const { category, photoId } = req.params;
+    const allRoomPhotos = loadRoomPhotos();
+    const list = allRoomPhotos[category] || [];
+    const idx = list.findIndex((p) => p.id === photoId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Photo not found in this room' });
+    }
+
+    const removed = list.splice(idx, 1)[0];
+    if (removed.isPrimary && list.length > 0) {
+      list[0].isPrimary = true;
+    }
+
+    allRoomPhotos[category] = list;
+    saveRoomPhotos(allRoomPhotos);
+
+    // Sync primary photo
+    const primaryItem = list.find((p) => p.isPrimary) || list[0];
+    const records = loadKnowledgeBase();
+    const kb = records.find((r) => r.category === category);
+    if (kb) {
+      kb.referencePhotoUrl = primaryItem ? primaryItem.url : '';
+      kb.updatedAt = new Date().toISOString();
+      saveKnowledgeBase(records);
+    }
+
+    res.json({
+      success: true,
+      message: 'Photo deleted permanently from room gallery',
+      photos: list,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete photo' });
+  }
+});
+
+// 8. AI MULTI-PHOTO ROOM ANALYSIS (Analyzes all photos of a room together)
+app.post('/api/ai/analyze-room-photos', requireAdmin, async (req, res) => {
+  try {
+    const { category, roomName } = req.body;
+    if (!category) {
+      return res.status(400).json({ error: 'Room category is required for analysis' });
+    }
+
+    const allRoomPhotos = loadRoomPhotos();
+    const photos = allRoomPhotos[category] || [];
+    if (photos.length === 0) {
+      return res.status(400).json({ error: 'No reference photos found for this room. Please upload at least one photo first.' });
+    }
+
+    const parts: any[] = [];
+    let validCount = 0;
+
+    for (const photo of photos) {
+      const imgData = getImageDataForAI(photo.url);
+      if (imgData) {
+        parts.push({
+          inlineData: {
+            mimeType: imgData.mimeType,
+            data: imgData.data,
+          },
+        });
+        validCount++;
+      }
+    }
+
+    if (validCount === 0) {
+      return res.status(400).json({ error: 'Could not load image data from room photos.' });
+    }
+
+    const promptText = `
+You are an expert Corporate Office Operations Trainer and Five-Star Pantry Facility Inspector.
+You are provided ${validCount} ACTUAL reference photographs of the office room: "${roomName || category.toUpperCase()}".
+Analyze ALL of these photos together to gain a complete 360-degree understanding of this specific room.
+
+INSTRUCTIONS:
+1. Synthesize observations from ALL angles: furniture placement, distances, chair alignment, table cleanliness, coaster and water bottle positions, glass inverted cleanliness, tissues, tray placement, switches/lights, and dustbins.
+2. Formulate practical step-by-step room setup standards that a Pantry Boy can follow without assistance.
+3. Formulate the exact cleaning procedure (cloth types, glass cleaner, wiping technique).
+4. Define the strict quality benchmarks (what 100% completion looks like).
+5. Highlight critical mistakes to avoid (e.g., placing cold bottles without coasters, crooked cushions, unaligned chairs, touching files).
+
+Provide all outputs in conversational, respectful Hindi with accurate English translations.
+`;
+
+    parts.push({ text: promptText });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: { parts },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summaryHi: { type: Type.STRING },
+            summaryEn: { type: Type.STRING },
+            setupStandardsHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+            setupStandardsEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+            cleaningProcedureHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+            cleaningProcedureEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+            qualityStandardsHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+            qualityStandardsEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+            mistakesToAvoidHi: { type: Type.ARRAY, items: { type: Type.STRING } },
+            mistakesToAvoidEn: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: [
+            'summaryHi',
+            'summaryEn',
+            'setupStandardsHi',
+            'setupStandardsEn',
+            'cleaningProcedureHi',
+            'cleaningProcedureEn',
+            'qualityStandardsHi',
+            'qualityStandardsEn',
+            'mistakesToAvoidHi',
+            'mistakesToAvoidEn',
+          ],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    const analysisData = {
+      ...parsed,
+      analyzedAt: new Date().toISOString(),
+      totalPhotosAnalyzed: validCount,
+    };
+
+    const analyses = loadRoomAnalysis();
+    analyses[category] = analysisData;
+    saveRoomAnalysis(analyses);
+
+    // Synchronize into training_knowledge.json
+    const records = loadKnowledgeBase();
+    const kb = records.find((r) => r.category === category);
+    if (kb) {
+      kb.summaryHi = analysisData.summaryHi || kb.summaryHi;
+      kb.summaryEn = analysisData.summaryEn || kb.summaryEn;
+      if (analysisData.qualityStandardsHi?.length) kb.qualityStandardsHi = analysisData.qualityStandardsHi;
+      if (analysisData.qualityStandardsEn?.length) kb.qualityStandardsEn = analysisData.qualityStandardsEn;
+      if (analysisData.mistakesToAvoidHi?.length) kb.mistakesToAvoidHi = analysisData.mistakesToAvoidHi;
+      if (analysisData.mistakesToAvoidEn?.length) kb.mistakesToAvoidEn = analysisData.mistakesToAvoidEn;
+      kb.updatedAt = new Date().toISOString();
+      saveKnowledgeBase(records);
+    }
+
+    res.json({
+      success: true,
+      message: `AI successfully analyzed all ${validCount} photos for ${roomName || category}!`,
+      analysis: analysisData,
+    });
+  } catch (err: any) {
+    console.error('Error in /api/ai/analyze-room-photos:', err);
+    res.status(500).json({ error: err.message || 'AI room photo analysis failed' });
+  }
+});
+
+// LEGACY SINGLE PHOTO MANAGEMENT (Retained for backward compatibility)
 app.post('/api/photos/upload', requireAdmin, (req, res) => {
   try {
     const { photoBase64, category, roomName, photoType = 'reference' } = req.body;
@@ -502,11 +1134,30 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
 
     const safeCat = category || 'general';
     const permanentUrl = saveBase64Image(photoBase64, `${photoType}_${safeCat}`);
+    const now = new Date().toISOString();
+
+    // Also append to room_photos gallery
+    const allRoomPhotos = loadRoomPhotos();
+    if (!allRoomPhotos[safeCat]) allRoomPhotos[safeCat] = [];
+    allRoomPhotos[safeCat].push({
+      id: `photo_${safeCat}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      url: permanentUrl,
+      captionHi: `${roomName || safeCat} संदर्भ फोटो`,
+      captionEn: `${roomName || safeCat} Reference Photo`,
+      uploadedAt: now,
+      uploadedBy: req.body?.adminName || 'Admin',
+      isPrimary: true,
+      photoType,
+    });
+    // Set all others to false
+    allRoomPhotos[safeCat].forEach((p, idx) => {
+      if (idx !== allRoomPhotos[safeCat].length - 1) p.isPrimary = false;
+    });
+    saveRoomPhotos(allRoomPhotos);
 
     // Update knowledge database record if category exists
     const records = loadKnowledgeBase();
     let target = records.find((r) => r.category === safeCat);
-    const now = new Date().toISOString();
 
     if (target) {
       if (photoType === 'incorrect') {
@@ -516,60 +1167,13 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
       }
       target.updatedAt = now;
       saveKnowledgeBase(records);
-    } else if (safeCat !== 'general') {
-      // Create draft record
-      target = {
-        id: `knowledge-${safeCat}`,
-        category: safeCat,
-        roomNameHi: roomName || safeCat.toUpperCase(),
-        roomNameEn: roomName || safeCat.toUpperCase(),
-        referencePhotoUrl: photoType === 'reference' ? permanentUrl : '',
-        incorrectPhotoUrl: photoType === 'incorrect' ? permanentUrl : undefined,
-        currentVersion: 1,
-        status: 'approved',
-        approvedBy: req.body?.adminName || 'Admin',
-        approvedAt: now,
-        titleHi: `${roomName || safeCat} मानक`,
-        titleEn: `${roomName || safeCat} Standard`,
-        summaryHi: '',
-        summaryEn: '',
-        steps: [],
-        cleaningProcedureHi: '',
-        cleaningProcedureEn: '',
-        expectedResultsHi: '',
-        expectedResultsEn: '',
-        qualityStandardsHi: [],
-        qualityStandardsEn: [],
-        mistakesToAvoidHi: [],
-        mistakesToAvoidEn: [],
-        voiceScriptHi: '',
-        voiceScriptEn: '',
-        versions: [],
-        createdAt: now,
-        updatedAt: now,
-      };
-      records.push(target);
-      saveKnowledgeBase(records);
-    }
-
-    // Sync guides.json
-    const guides = loadGuides();
-    const guide = guides.find((g: any) => g.category === safeCat);
-    if (guide) {
-      if (photoType === 'incorrect') {
-        guide.incorrectPhotoUrl = permanentUrl;
-      } else {
-        guide.photoUrl = permanentUrl;
-      }
-      guide.updatedAt = now;
-      saveGuides(guides);
     }
 
     res.json({
       success: true,
       message: 'Reference photo permanently saved on server!',
       photoUrl: permanentUrl,
-      record: target,
+      photos: allRoomPhotos[safeCat],
     });
   } catch (err: any) {
     console.error('Error uploading reference photo:', err);
@@ -594,18 +1198,6 @@ app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
       }
       target.updatedAt = now;
       saveKnowledgeBase(records);
-    }
-
-    const guides = loadGuides();
-    const guide = guides.find((g: any) => g.category === category);
-    if (guide) {
-      if (photoType === 'incorrect') {
-        guide.incorrectPhotoUrl = undefined;
-      } else {
-        guide.photoUrl = '';
-      }
-      guide.updatedAt = now;
-      saveGuides(guides);
     }
 
     res.json({ success: true, message: 'Reference photo deleted successfully' });
@@ -895,237 +1487,7 @@ app.delete('/api/training/knowledge/:id', requireAdmin, (req, res) => {
   res.json({ success: true, message: 'Instruction deleted successfully' });
 });
 
-// 6. AI MULTIMODAL REFERENCE PHOTO ANALYSIS (Requirement 1 - Admin only)
-app.post('/api/ai/analyze-photo', requireAdmin, async (req, res) => {
-  try {
-    const { photoBase64, mimeType, category, roomName, adminPrompt } = req.body;
 
-    if (!photoBase64) {
-      return res.status(400).json({ error: 'Photo base64 data is required for visual analysis.' });
-    }
-
-    // Strip prefix if included
-    const cleanBase64 = photoBase64.replace(/^data:image\/[a-zA-Z]+;base64,/, '');
-
-    const promptText = `
-You are an expert Corporate Office Operations Trainer and Five-Star Pantry Facility Inspector.
-Analyze this ACTUAL office/pantry reference photograph in extreme practical detail.
-Target Area / Room: ${roomName || category || 'Office Workstation / Pantry'}.
-Admin notes (if any): ${adminPrompt || 'Generate rigorous, realistic step-by-step instructions for a pantry boy'}.
-
-INSTRUCTIONS:
-1. Examine the photograph: observe furniture placement, chair alignment, table cleanlines, coaster/glass positions, water bottles, cables, napkins, dustbins, and lighting.
-2. Formulate clear, practical step-by-step instructions in simple conversational Hindi (with English translations) that a Pantry Boy can follow without any senior supervisor assistance.
-3. Define the exact cleaning procedure (e.g. microfiber cloth, glass cleaner, wiping motions).
-4. Define the expected final quality standards (what 100% completion looks like).
-5. Highlight crucial mistakes to avoid (e.g., placing wet cold bottles without coasters, crooked chairs, touching computer screens/files).
-6. Provide a natural, friendly, face-to-face Hindi voice script starting with "भैया..." polite tone, explaining the work clearly.
-`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType || 'image/jpeg',
-              data: cleanBase64,
-            },
-          },
-          { text: promptText },
-        ],
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            category: { type: Type.STRING },
-            titleHi: { type: Type.STRING },
-            titleEn: { type: Type.STRING },
-            summaryHi: { type: Type.STRING },
-            summaryEn: { type: Type.STRING },
-            steps: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  stepNumber: { type: Type.INTEGER },
-                  instructionHi: { type: Type.STRING },
-                  instructionEn: { type: Type.STRING },
-                  keyPoints: { type: Type.STRING },
-                },
-                required: ['stepNumber', 'instructionHi', 'instructionEn'],
-              },
-            },
-            cleaningProcedureHi: { type: Type.STRING },
-            cleaningProcedureEn: { type: Type.STRING },
-            expectedResultsHi: { type: Type.STRING },
-            expectedResultsEn: { type: Type.STRING },
-            qualityStandardsHi: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            qualityStandardsEn: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            mistakesToAvoidHi: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            mistakesToAvoidEn: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            voiceScriptHi: { type: Type.STRING },
-            voiceScriptEn: { type: Type.STRING },
-          },
-          required: [
-            'titleHi',
-            'titleEn',
-            'summaryHi',
-            'summaryEn',
-            'steps',
-            'cleaningProcedureHi',
-            'cleaningProcedureEn',
-            'expectedResultsHi',
-            'expectedResultsEn',
-            'qualityStandardsHi',
-            'qualityStandardsEn',
-            'mistakesToAvoidHi',
-            'mistakesToAvoidEn',
-            'voiceScriptHi',
-            'voiceScriptEn',
-          ],
-        },
-      },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    res.json({
-      success: true,
-      data: parsed,
-    });
-  } catch (err: any) {
-    console.error('Error analyzing photo with Gemini:', err);
-    res.status(500).json({ error: err.message || 'AI vision analysis failed' });
-  }
-});
-
-// 7. ADMIN VOICE INSTRUCTION LEARNING (Requirement 3 - Admin only)
-app.post('/api/ai/voice-instruction', requireAdmin, async (req, res) => {
-  try {
-    const { spokenText, categoryHint } = req.body;
-
-    if (!spokenText || !spokenText.trim()) {
-      return res.status(400).json({ error: 'Spoken text instruction is required.' });
-    }
-
-    const promptText = `
-You are the AI Training System for an Office Operations and Pantry Boy Training App.
-An Admin has spoken the following voice instruction:
-"${spokenText}"
-
-Hint Category (if provided): ${categoryHint || 'None'}
-
-Your job:
-1. Understand the spoken instruction (which may be in informal Hindi, Hinglish, or English).
-2. Identify the most relevant office room or task category from:
-   ['reception', 'prestige_loft', 'the_skyline', 'the_community', 'the_summit', 'wcr_air', 'elegance_suite', 'prime_loft', 'regency', 'lalit_sir_cabin', 'pantry', 'lights_equipment'].
-3. Convert this natural spoken input into structured, production-grade training instructions:
-   - titleHi and titleEn
-   - summaryHi and summaryEn
-   - step-by-step instructions (steps array)
-   - cleaning procedure
-   - expected results
-   - quality standards
-   - mistakes to avoid
-   - natural supervisor voice script starting with "भैया..."
-`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: promptText,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            category: { type: Type.STRING },
-            titleHi: { type: Type.STRING },
-            titleEn: { type: Type.STRING },
-            summaryHi: { type: Type.STRING },
-            summaryEn: { type: Type.STRING },
-            steps: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  stepNumber: { type: Type.INTEGER },
-                  instructionHi: { type: Type.STRING },
-                  instructionEn: { type: Type.STRING },
-                  keyPoints: { type: Type.STRING },
-                },
-                required: ['stepNumber', 'instructionHi', 'instructionEn'],
-              },
-            },
-            cleaningProcedureHi: { type: Type.STRING },
-            cleaningProcedureEn: { type: Type.STRING },
-            expectedResultsHi: { type: Type.STRING },
-            expectedResultsEn: { type: Type.STRING },
-            qualityStandardsHi: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            qualityStandardsEn: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            mistakesToAvoidHi: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            mistakesToAvoidEn: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-            },
-            voiceScriptHi: { type: Type.STRING },
-            voiceScriptEn: { type: Type.STRING },
-          },
-          required: [
-            'category',
-            'titleHi',
-            'titleEn',
-            'summaryHi',
-            'summaryEn',
-            'steps',
-            'cleaningProcedureHi',
-            'cleaningProcedureEn',
-            'expectedResultsHi',
-            'expectedResultsEn',
-            'qualityStandardsHi',
-            'qualityStandardsEn',
-            'mistakesToAvoidHi',
-            'mistakesToAvoidEn',
-            'voiceScriptHi',
-            'voiceScriptEn',
-          ],
-        },
-      },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    res.json({
-      success: true,
-      data: parsed,
-      originalSpeech: spokenText,
-    });
-  } catch (err: any) {
-    console.error('Error interpreting voice instruction:', err);
-    res.status(500).json({ error: err.message || 'Failed to interpret voice instruction' });
-  }
-});
 
 
 
@@ -1287,7 +1649,6 @@ app.post('/api/ai/synthesize-speech', async (req, res) => {
     res.status(500).json({ error: err.message || 'Speech synthesis failed' });
   }
 });
-
 
 // Vite middleware integration (Dev Mode vs Production Mode)
 async function startServer() {
