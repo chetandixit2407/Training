@@ -5,6 +5,7 @@ import { AITrainingService } from '../services/aiTrainingService';
 import { DEFAULT_USERS } from '../data/defaultData';
 import { VoiceButton } from './VoiceButton';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { ReferenceImage } from './ReferenceImage';
 import {
   Shield,
   ShieldCheck,
@@ -229,7 +230,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
       setStagedPhotos([]);
       loadCurrentRoomData(selectedGuide.category);
     }
-  }, [selectedGuideId, selectedGuide]);
+  }, [selectedGuideId, selectedGuide?.category]);
 
   // Handle selecting MULTIPLE files at once
   const handleSelectMultipleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1046,9 +1047,10 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
                       <div>
                         {/* Photo Thumbnail */}
                         <div className="relative aspect-16/10 bg-slate-200 overflow-hidden group">
-                          <img
+                          <ReferenceImage
                             src={photo.url}
                             alt={photo.captionEn || `Photo ${index + 1}`}
+                            language={language}
                             className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300 cursor-pointer"
                             onClick={() => {
                               setPreviewPhotoIndex(index);
@@ -1058,7 +1060,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
 
                           {/* Primary Badge */}
                           {isPrimary && (
-                            <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] shadow-sm flex items-center gap-1">
+                            <div className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] shadow-sm flex items-center gap-1 z-20">
                               <Star className="w-3.5 h-3.5 fill-slate-950" />
                               <span>{language === 'hi' ? 'मुख्य मानक' : 'Primary'}</span>
                             </div>
@@ -1070,14 +1072,14 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
                               setPreviewPhotoIndex(index);
                               setPreviewPhoto(photo);
                             }}
-                            className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                            className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer z-20"
                             title="Preview Fullscreen"
                           >
                             <Maximize2 className="w-4 h-4" />
                           </button>
 
                           {/* Angle Index Badge */}
-                          <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono">
+                          <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono z-20">
                             Angle #{index + 1}
                           </div>
                         </div>
@@ -2134,11 +2136,11 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
               </div>
 
               {/* Main Image Container with Next / Prev Buttons */}
-              <div className="relative w-full flex items-center justify-center max-h-[72vh] overflow-hidden rounded-2xl bg-black/50">
-                <img
+              <div className="relative w-full flex items-center justify-center min-h-[300px] max-h-[72vh] overflow-hidden rounded-2xl bg-black/50">
+                <ReferenceImage
                   src={activePhoto.url}
                   alt={activePhoto.captionEn || `Angle ${displayIdx + 1}`}
-                  referrerPolicy="no-referrer"
+                  language={language}
                   className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl shadow-2xl"
                 />
 
@@ -2197,7 +2199,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
                             : 'border-slate-700 opacity-60 hover:opacity-100'
                         }`}
                       >
-                        <img src={p.url} alt="" className="w-full h-full object-cover" />
+                        <ReferenceImage src={p.url} alt="" language={language} compact className="w-full h-full object-cover" />
                       </button>
                     ))}
                   </div>

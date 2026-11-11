@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { VisualGuide, Language, User, RoomPhotoItem, AIRoomAnalysis } from '../types';
 import { VoiceButton } from './VoiceButton';
 import { StorageService, fileToDataUrl, normalizeRoomCategory } from '../services/storageService';
 import { AITrainingService } from '../services/aiTrainingService';
 import { TaskCompleteModal } from './TaskCompleteModal';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { ReferenceImage } from './ReferenceImage';
 import { DEFAULT_USERS } from '../data/defaultData';
 import {
   CheckCircle2,
@@ -128,6 +129,34 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
 
   // Selected guide for detailed view
   const currentDetailedGuide = guides.find((g) => g.id === selectedGuideId) || guides[0];
+  const [isLoadingDetailedPhotos, setIsLoadingDetailedPhotos] = useState(false);
+
+  // Fetch fresh photos from server whenever an area is opened in detailed view
+  useEffect(() => {
+    if (viewMode !== 'detailed' || !currentDetailedGuide?.category) return;
+    let cancelled = false;
+    setIsLoadingDetailedPhotos(true);
+    AITrainingService.getRoomPhotos(currentDetailedGuide.category)
+      .then((res) => {
+        if (cancelled) return;
+        if (Array.isArray(res.photos)) {
+          StorageService.setRoomPhotos(currentDetailedGuide.category, res.photos);
+          if (res.analysis) {
+            StorageService.setRoomAnalysis(currentDetailedGuide.category, res.analysis);
+          }
+          setRefreshTick((t) => t + 1);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to refresh room photos on area open:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDetailedPhotos(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, currentDetailedGuide?.category]);
 
   // Helper to get room gallery photos
   const getRoomPhotosForGuide = (guide: VisualGuide): RoomPhotoItem[] => {
@@ -593,10 +622,10 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                   <div className="relative aspect-16/10 bg-slate-100 overflow-hidden group">
                     {hasPhoto ? (
                       <>
-                        <img
+                        <ReferenceImage
                           src={primaryPhoto.url}
                           alt={guide.titleEn}
-                          referrerPolicy="no-referrer"
+                          language={language}
                           className="w-full h-full object-cover group-hover:scale-101 transition-transform duration-300 cursor-pointer"
                           onClick={() => openLightbox(guide.category, 0)}
                         />
@@ -641,6 +670,13 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                           )}
                         </div>
                       </>
+                    ) : !StorageService.isPhotosInitialized() ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                        <RefreshCw className="w-8 h-8 mb-2 text-amber-500 animate-spin" />
+                        <span className="text-xs font-bold text-slate-600 block">
+                          {language === 'hi' ? 'फोटो लोड हो रहे हैं...' : 'Loading photos...'}
+                        </span>
+                      </div>
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
                         <Camera className="w-10 h-10 mb-2 text-slate-300" />
@@ -676,9 +712,9 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                           className="w-10 h-8 rounded-md overflow-hidden border border-slate-300 hover:border-amber-500 shrink-0 cursor-pointer relative group transition-all"
                           title={p.captionEn || `Angle ${pIdx + 1}`}
                         >
-                          <img src={p.url} alt="" className="w-full h-full object-cover" />
+                          <ReferenceImage src={p.url} alt={p.captionEn || `Angle ${pIdx + 1}`} language={language} compact className="w-full h-full object-cover" />
                           {p.isPrimary && (
-                            <div className="absolute inset-0 bg-amber-500/20 border border-amber-500"></div>
+                            <div className="absolute inset-0 bg-amber-500/20 border border-amber-500 pointer-events-none"></div>
                           )}
                         </button>
                       ))}
@@ -869,6 +905,21 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                 </div>
 
                 {/* Photo Gallery Grid */}
+                {isLoadingDetailedPhotos && currentPhotos.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                    <RefreshCw className="w-6 h-6 animate-spin text-amber-500" />
+                    <span className="text-xs font-bold">
+                      {language === 'hi' ? 'इस क्षेत्र की फोटो लोड हो रही हैं...' : 'Loading area photos...'}
+                    </span>
+                  </div>
+                ) : currentPhotos.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <Camera className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm font-bold text-slate-700">
+                      {language === 'hi' ? 'इस क्षेत्र में अभी कोई संदर्भ फोटो नहीं है' : 'No reference photos uploaded for this area yet'}
+                    </p>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {currentPhotos.map((photo, pIdx) => {
                     const isPrimary = Boolean(photo.isPrimary);
@@ -884,13 +935,14 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                             className="relative aspect-16/10 bg-slate-200 overflow-hidden cursor-pointer group"
                             onClick={() => openLightbox(currentDetailedGuide.category, pIdx)}
                           >
-                            <img
+                            <ReferenceImage
                               src={photo.url}
                               alt={photo.captionEn || `Angle ${pIdx + 1}`}
+                              language={language}
                               className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
                             />
                             {isPrimary && (
-                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] shadow-sm flex items-center gap-1">
+                              <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] shadow-sm flex items-center gap-1 z-20">
                                 <Star className="w-3 h-3 fill-slate-950" />
                                 <span>{language === 'hi' ? 'मुख्य मानक' : 'Primary'}</span>
                               </div>
@@ -900,12 +952,12 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                                 e.stopPropagation();
                                 openLightbox(currentDetailedGuide.category, pIdx);
                               }}
-                              className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                              className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer z-20"
                               title="Fullscreen"
                             >
                               <Maximize2 className="w-3.5 h-3.5" />
                             </button>
-                            <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-mono">
+                            <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-[10px] font-mono z-20">
                               Angle #{pIdx + 1}
                             </div>
                           </div>
@@ -916,6 +968,12 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                                 ? photo.captionHi || photo.captionEn || 'संदर्भ फोटो'
                                 : photo.captionEn || photo.captionHi || 'Reference Photo'}
                             </p>
+                            {photo.uploadedAt && (
+                              <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>{new Date(photo.uploadedAt).toLocaleString()}</span>
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -945,6 +1003,7 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                     );
                   })}
                 </div>
+                )}
               </div>
             );
           })()}
@@ -1292,11 +1351,11 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
             </div>
 
             {/* Main Image Container with Next / Prev Buttons */}
-            <div className="relative w-full flex items-center justify-center max-h-[72vh] overflow-hidden rounded-2xl bg-black/50">
-              <img
+            <div className="relative w-full flex items-center justify-center min-h-[300px] max-h-[72vh] overflow-hidden rounded-2xl bg-black/50">
+              <ReferenceImage
                 src={currentLightboxPhoto.url}
                 alt="Room Reference Angle"
-                referrerPolicy="no-referrer"
+                language={language}
                 className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl shadow-2xl"
               />
 
@@ -1352,7 +1411,7 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                           : 'border-slate-700 opacity-60 hover:opacity-100'
                       }`}
                     >
-                      <img src={p.url} alt="" className="w-full h-full object-cover" />
+                      <ReferenceImage src={p.url} alt="" language={language} compact className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>

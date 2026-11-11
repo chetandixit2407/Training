@@ -15,6 +15,8 @@ const STORAGE_KEYS = {
   TASKS: 'office_train_tasks_v4',
   CURRENT_USER: 'office_train_current_user_v4',
   LANGUAGE: 'office_train_lang_v4',
+  ROOM_PHOTOS: 'office_train_room_photos_v4',
+  ROOM_ANALYSES: 'office_train_room_analyses_v4',
 };
 
 // Real-time broadcast helper
@@ -179,6 +181,9 @@ export const StorageService = {
           }
         });
         isRoomPhotosInitialized = true;
+        try {
+          localStorage.setItem(STORAGE_KEYS.ROOM_PHOTOS, JSON.stringify(roomPhotosCache));
+        } catch {}
       }
 
       if (analysesByRoom && Object.keys(analysesByRoom).length > 0) {
@@ -187,6 +192,9 @@ export const StorageService = {
           roomAnalysesCache[normCat] = analysis;
           roomAnalysesCache[cat] = analysis;
         });
+        try {
+          localStorage.setItem(STORAGE_KEYS.ROOM_ANALYSES, JSON.stringify(roomAnalysesCache));
+        } catch {}
       }
 
       // 2. Fetch server-persisted reference photos and approved knowledge
@@ -227,7 +235,28 @@ export const StorageService = {
         console.warn('Server tasks sync notice:', taskSyncErr);
       }
     } catch (e) {
-      console.warn('Backend knowledge & photos sync notice:', e);
+      console.warn('Backend knowledge & photos sync notice (using offline cache):', e);
+    }
+
+    // Offline fallback: if server fetch returned nothing (e.g., offline), hydrate from localStorage
+    if (!isRoomPhotosInitialized) {
+      try {
+        const cachedPhotos = localStorage.getItem(STORAGE_KEYS.ROOM_PHOTOS);
+        if (cachedPhotos) {
+          const parsed = JSON.parse(cachedPhotos);
+          if (parsed && typeof parsed === 'object') {
+            roomPhotosCache = parsed;
+            isRoomPhotosInitialized = true;
+          }
+        }
+        const cachedAnalyses = localStorage.getItem(STORAGE_KEYS.ROOM_ANALYSES);
+        if (cachedAnalyses) {
+          const parsedA = JSON.parse(cachedAnalyses);
+          if (parsedA && typeof parsedA === 'object') {
+            roomAnalysesCache = parsedA;
+          }
+        }
+      } catch {}
     }
 
     // Merge IndexedDB photos, but DO NOT resurrect deleted photos for empty galleries
@@ -401,6 +430,14 @@ export const StorageService = {
       const data = localStorage.getItem(STORAGE_KEYS.VISUAL_GUIDES);
       if (data) {
         guides = JSON.parse(data);
+        const existingIds = new Set(guides.map((g) => g.id));
+        const existingCats = new Set(guides.map((g) => normalizeRoomCategory(g.category)));
+        const missingDefaults = DEFAULT_VISUAL_GUIDES.filter(
+          (dg) => !existingIds.has(dg.id) && !existingCats.has(normalizeRoomCategory(dg.category))
+        );
+        if (missingDefaults.length > 0) {
+          guides = [...guides, ...missingDefaults];
+        }
       } else {
         guides = [...DEFAULT_VISUAL_GUIDES];
       }
@@ -444,6 +481,10 @@ export const StorageService = {
         aiRoomAnalysis: roomAnalysis,
       };
     });
+  },
+
+  isPhotosInitialized(): boolean {
+    return isRoomPhotosInitialized;
   },
 
   getRoomPhotos(category: string): RoomPhotoItem[] {
@@ -508,6 +549,10 @@ export const StorageService = {
     } catch (e) {
       console.warn('Notice saving local guides in setRoomPhotos:', e);
     }
+
+    try {
+      localStorage.setItem(STORAGE_KEYS.ROOM_PHOTOS, JSON.stringify(roomPhotosCache));
+    } catch {}
 
     broadcastUpdate('guides');
     broadcastUpdate('photos');

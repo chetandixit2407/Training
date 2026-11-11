@@ -27,7 +27,12 @@ export type RoomCategory =
   | 'lalit_sir_cabin'
   | 'pantry'
   | 'workstations'
-  | 'lights_equipment';
+  | 'lights_equipment'
+  | 'kitchen_area'
+  | 'employee_desk_area'
+  | 'pool_area'
+  | 'light_combination_visitor'
+  | 'light_combination_employee';
 
 export interface RoomPhotoItem {
   id: string;

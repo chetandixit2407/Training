@@ -39,7 +39,7 @@ export const AITrainingService = {
    */
   async getApprovedKnowledge(): Promise<TrainingKnowledgeRecord[]> {
     try {
-      const res = await fetch('/api/training/knowledge');
+      const res = await fetch('/api/training/knowledge', { cache: 'no-store' });
       if (!res.ok) {
         throw new Error(`Failed to fetch training knowledge: ${res.statusText}`);
       }
@@ -157,7 +157,7 @@ export const AITrainingService = {
     analysesByRoom: Record<string, AIRoomAnalysis>;
   }> {
     try {
-      const res = await fetch('/api/photos/all-rooms');
+      const res = await fetch('/api/photos/all-rooms', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch room photos');
       const data = await res.json();
       return {
@@ -178,7 +178,7 @@ export const AITrainingService = {
     analysis: AIRoomAnalysis | null;
   }> {
     try {
-      const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}`);
+      const res = await fetch(`/api/photos/room/${encodeURIComponent(category)}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch room photos');
       const data = await res.json();
       return {

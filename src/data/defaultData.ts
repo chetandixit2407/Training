@@ -703,6 +703,348 @@ export const DEFAULT_VISUAL_GUIDES: VisualGuide[] = [
       'The reception area is the face of the office. Keep sofa cushions upright and plumped. Place coasters with fresh water bottles and spotless glasses. Clean table immediately after any guest leaves.',
     updatedAt: '2026-11-02T08:30:00Z',
   },
+  {
+    id: 'guide-kitchen-area',
+    category: 'kitchen_area',
+    titleHi: 'KITCHEN AREA',
+    titleEn: 'KITCHEN AREA',
+    subtitleHi: 'काउंटरटॉप, कॉफी/चाय मशीन, सिंक, आरओ सिस्टम और बर्तन व्यवस्था',
+    subtitleEn: 'Countertop, coffee/tea machine, sink, RO dispenser, and utensil organization',
+    furnitureDetailsHi: 'किचन काउंटर, कॉफी मशीन, सिंक, क्रॉकरी रैक व डस्टबिन (Kitchen Counter, Coffee Machine, Sink, Crockery Rack & Dustbin)',
+    furnitureDetailsEn: 'Kitchen counter, coffee machine, sink, crockery rack, and covered dustbin',
+    photoUrl: '',
+    photoCaptionHi: 'किचन एरिया: एडमिन द्वारा वास्तविक ऑफिस फोटो अपलोड करने के लिए तैयार।',
+    photoCaptionEn: 'Kitchen Area: Ready for Admin to upload actual office reference photos.',
+    incorrectPhotoUrl: undefined,
+    incorrectCaptionHi: 'गलत तरीका: सिंक में जूठे बर्तन छोड़ना या गीला काउंटरटॉप रखना।',
+    incorrectCaptionEn: 'Incorrect: Leaving unwashed dishes in the sink or wet, messy countertops.',
+    photos: [],
+    furniturePlacementHi: [
+      'सभी कप, गिलास, ट्रे और केतली को उनकी निर्धारित जगह पर सूखा और सीधा रखें।',
+      'कॉफी/चाय मशीन और माइक्रोवेव के आसपास कोई सामान बिखरा न रखें।',
+      'डस्टबिन हमेशा ढक्कन बंद और साफ लाइनर के साथ कोने में रखें।',
+    ],
+    furniturePlacementEn: [
+      'Arrange all cups, glasses, trays, and kettles dry and upright in designated racks.',
+      'Keep the area around the coffee/tea machine and microwave clutter-free.',
+      'Keep the covered dustbin with a fresh liner neatly in its corner.',
+    ],
+    waterAndItemsHi: [
+      'आरओ वाटर डिस्पेंसर के नीचे की ड्रिप ट्रे हमेशा खाली और सूखी रखें।',
+      'दूध, चीनी, चाय पत्ती, कॉफी और टिशू का स्टॉक नियमित रूप से जांचें।',
+      'साफ और इस्तेमाल किए गए कपों को अलग-अलग जोन में रखें।',
+    ],
+    waterAndItemsEn: [
+      'Keep the RO water dispenser drip tray empty and dry at all times.',
+      'Check milk, sugar, tea, coffee, and tissue stock levels regularly.',
+      'Separate clean crockery strictly from used utensils.',
+    ],
+    cleaningStandardHi: [
+      'हर चाय/कॉफी सेवा के बाद काउंटरटॉप को सैनिटाइज्ड कपड़े से पोंछें।',
+      'सिंक में कोई जूठे बर्तन या चाय की पत्ती न छोड़ें; तुरंत धोकर सुखाएं।',
+      'फर्श सूखा और फिसलन-रहित होना चाहिए।',
+    ],
+    cleaningStandardEn: [
+      'Wipe countertops with a sanitized cloth after every beverage service.',
+      'Never leave used utensils or tea residue in the sink; wash and dry promptly.',
+      'Keep the kitchen floor dry and slip-free.',
+    ],
+    lightsAndSwitchesHi: [
+      'सुबह 8:30 बजे किचन लाइट और एग्जॉस्ट फैन चालू करें।',
+      'दिन के अंत में कॉफी मशीन, केतली और अनावश्यक स्विच बंद करना सुनिश्चित करें।',
+    ],
+    lightsAndSwitchesEn: [
+      'Turn on kitchen lights and exhaust fan at 8:30 AM.',
+      'Switch off coffee machine, kettle, and non-essential appliances at closing.',
+    ],
+    correctRulesHi: [
+      'हमेशा साफ एप्रन और धुले हुए हाथों से चाय-कॉफी व पानी परोसें।',
+      'काउंटरटॉप और सिंक को हर घंटे चेक करके साफ रखें।',
+    ],
+    correctRulesEn: [
+      'Always serve beverages with clean hands and neat uniform/apron.',
+      'Inspect and wipe countertops and sink every hour.',
+    ],
+    incorrectMistakesHi: [
+      'सिंक में गंदे बर्तन जमा करना।',
+      'गीले या चिपचिपे काउंटर पर ट्रे रखना।',
+    ],
+    incorrectMistakesEn: [
+      'Piling up dirty dishes in the sink.',
+      'Placing serving trays on wet or sticky counters.',
+    ],
+    voiceScriptHi:
+      'भैया, किचन एरिया ऑफिस की स्वच्छता का केंद्र है। काउंटरटॉप हमेशा सूखा और साफ रखें, सिंक में कोई भी जूठा बर्तन न छोड़ें, और कप, गिलास व ट्रे को उनकी सही जगह पर व्यवस्थित रखें।',
+    voiceScriptEn:
+      'The kitchen area is the hygiene center of the office. Keep countertops dry and sanitized, never leave used utensils in the sink, and keep all cups, glasses, and trays neatly arranged.',
+    updatedAt: '2026-11-11T05:00:00Z',
+  },
+  {
+    id: 'guide-employee-desk-area',
+    category: 'employee_desk_area',
+    titleHi: 'EMPLOYEE DESK AREA',
+    titleEn: 'EMPLOYEE DESK AREA',
+    subtitleHi: 'स्टाफ वर्कस्टेशन, कुर्सियां, मॉनिटर क्लीनिंग व केबल व्यवस्था',
+    subtitleEn: 'Staff workstations, chairs, monitor dusting, and desk organization',
+    furnitureDetailsHi: 'कर्मचारी डेस्क, एर्गोनॉमिक कुर्सियां व डेस्क डस्टबिन (Employee Desks, Ergonomic Chairs & Desk Bins)',
+    furnitureDetailsEn: 'Employee desks, ergonomic chairs, and under-desk waste bins',
+    photoUrl: '',
+    photoCaptionHi: 'एम्प्लॉई डेस्क एरिया: एडमिन द्वारा वास्तविक ऑफिस फोटो अपलोड करने के लिए तैयार।',
+    photoCaptionEn: 'Employee Desk Area: Ready for Admin to upload actual office reference photos.',
+    incorrectPhotoUrl: undefined,
+    incorrectCaptionHi: 'गलत तरीका: डेस्क पर खाली कप छोड़ना या कर्मचारियों के कागजात हटाना।',
+    incorrectCaptionEn: 'Incorrect: Leaving empty mugs on desks or disturbing employee documents.',
+    photos: [],
+    furniturePlacementHi: [
+      'सुबह 9:00 बजे से पहले सभी कर्मचारी कुर्सियों को डेस्क के नीचे सीधा और समानांतर टक करें।',
+      'वॉकवे और गलियारे बिल्कुल खाली रखें ताकि चलने में कोई बाधा न हो।',
+    ],
+    furniturePlacementEn: [
+      'Tuck all employee chairs straight and parallel under desks before 9:00 AM.',
+      'Keep walkways and aisles completely clear of chairs or bags.',
+    ],
+    waterAndItemsHi: [
+      'सुबह डेस्क पर खाली या पुराने गिलास/कप हों तो तुरंत हटाकर किचन में धोएं।',
+      'कर्मचारियों की पानी की बोतलों या व्यक्तिगत सामान को बिना पूछे न हटाएं।',
+    ],
+    waterAndItemsEn: [
+      'Collect any empty or used mugs from desks promptly and wash them in the kitchen.',
+      'Never move personal items, laptops, or work documents without permission.',
+    ],
+    cleaningStandardHi: [
+      'सूखे माइक्रोफाइबर कपड़े से डेस्क की खाली सतह साफ करें; कीबोर्ड या कागज न छेड़ें।',
+      'सभी डेस्क के नीचे के डस्टबिन सुबह खाली करके साफ रखें।',
+    ],
+    cleaningStandardEn: [
+      'Dust open desk surfaces with a dry microfiber cloth without disturbing keyboards or papers.',
+      'Empty all under-desk waste bins every morning.',
+    ],
+    lightsAndSwitchesHi: [
+      'कार्य समय के दौरान एम्प्लॉई डेस्क एरिया की लाइटिंग कर्मचारी मोड के अनुसार चालू रखें।',
+      'शाम को खाली सेक्शन की लाइटें और एसी बंद करें।',
+    ],
+    lightsAndSwitchesEn: [
+      'Keep employee desk lighting in Employee Mode during working hours.',
+      'Turn off lights and AC in vacant desk sections in the evening.',
+    ],
+    correctRulesHi: [
+      'डेस्क सफाई हमेशा कर्मचारियों के आने से पहले सुबह 8:30 से 9:00 के बीच पूरी करें।',
+      'चाय या पानी देते समय लैपटॉप और दस्तावेजों से सुरक्षित दूरी रखें।',
+    ],
+    correctRulesEn: [
+      'Complete desk dusting between 8:30 AM and 9:00 AM before staff arrive.',
+      'Serve beverages carefully away from laptops and papers.',
+    ],
+    incorrectMistakesHi: [
+      'डेस्क पर रखी फाइलों या नोट्स को इधर-उधर करना।',
+      'गीले कपड़े से मॉनिटर या इलेक्ट्रॉनिक्स पोंछना।',
+    ],
+    incorrectMistakesEn: [
+      'Rearranging employee files, sticky notes, or notebooks.',
+      'Using wet cloths on monitors, keyboards, or power strips.',
+    ],
+    voiceScriptHi:
+      'भैया, एम्प्लॉई डेस्क एरिया में सुबह सभी कुर्सियां सीधी अंदर रखें, डेस्क के नीचे के डस्टबिन खाली करें और खाली कप हटाएं। कर्मचारियों के लैपटॉप, फाइलों या व्यक्तिगत सामान को कभी न छेड़ें।',
+    voiceScriptEn:
+      'In the employee desk area, tuck all chairs neatly in the morning, empty under-desk bins, and clear used mugs. Never touch laptops, files, or personal belongings.',
+    updatedAt: '2026-11-11T05:00:00Z',
+  },
+  {
+    id: 'guide-pool-area',
+    category: 'pool_area',
+    titleHi: 'POOL AREA',
+    titleEn: 'POOL AREA',
+    subtitleHi: 'पूल टेबल, क्यू स्टिक्स, बॉल सेट, बैठने की जगह व सफाई मानक',
+    subtitleEn: 'Pool table, cue sticks, ball set, lounge seating, and cleanliness standard',
+    furnitureDetailsHi: 'पूल टेबल, क्यू रैक, बॉल सेट व लाउंज सीटिंग (Pool Table, Cue Rack, Ball Set & Lounge Seating)',
+    furnitureDetailsEn: 'Pool table, cue stick rack, ball set, and surrounding seating',
+    photoUrl: '',
+    photoCaptionHi: 'पूल एरिया: एडमिन द्वारा वास्तविक ऑफिस फोटो अपलोड करने के लिए तैयार।',
+    photoCaptionEn: 'Pool Area: Ready for Admin to upload actual office reference photos.',
+    incorrectPhotoUrl: undefined,
+    incorrectCaptionHi: 'गलत तरीका: पूल टेबल पर चाय-पानी के कप रखना या क्यू स्टिक्स बिखेरना।',
+    incorrectCaptionEn: 'Incorrect: Placing cups/bottles on the pool table or leaving cue sticks scattered.',
+    photos: [],
+    furniturePlacementHi: [
+      'खेल के बाद सभी क्यू स्टिक्स को रैक में सीधा और व्यवस्थित रखें।',
+      'पूल बॉल्स को ट्रायंगल रैक में या ट्रे में व्यवस्थित रखें।',
+      'आसपास की कुर्सियां और स्टूल अपनी निर्धारित जगह पर सीधे रखें।',
+    ],
+    furniturePlacementEn: [
+      'Return all cue sticks neatly to the wall/stand rack after use.',
+      'Arrange pool balls cleanly inside the triangle rack or storage tray.',
+      'Keep surrounding stools and lounge chairs aligned in their designated spots.',
+    ],
+    waterAndItemsHi: [
+      'पूल टेबल के फेल्ट (कपड़े) पर कभी भी पानी, चाय, कॉफी या खाना न रखें।',
+      'पानी की बोतल या कप केवल साइड टेबल या कोस्टर पर ही रखें।',
+    ],
+    waterAndItemsEn: [
+      'Never place water, tea, coffee, or food on the pool table felt.',
+      'Keep drinks strictly on side tables with coasters.',
+    ],
+    cleaningStandardHi: [
+      'पूल टेबल के लकड़ी के किनारों को सूखे माइक्रोफाइबर कपड़े से साफ करें।',
+      'टेबल के आसपास का फर्श धूल, चॉक पाउडर और कचरे से मुक्त रखें।',
+    ],
+    cleaningStandardEn: [
+      'Wipe the wooden rails of the pool table with a dry microfiber cloth.',
+      'Keep the floor around the pool table free of chalk dust and litter.',
+    ],
+    lightsAndSwitchesHi: [
+      'जब पूल एरिया उपयोग में न हो या क्लाइंट विजिट हो, तो आवश्यकतानुसार लाइट चालू/बंद करें।',
+    ],
+    lightsAndSwitchesEn: [
+      'Manage pool table overhead lighting based on usage and visitor schedule.',
+    ],
+    correctRulesHi: [
+      'पूल टेबल फेल्ट पर कोई भी तरल पदार्थ न गिरने दें।',
+      'दिन के अंत में सभी क्यू स्टिक्स, चॉक और बॉल्स की जांच कर व्यवस्थित करें।',
+    ],
+    correctRulesEn: [
+      'Protect the pool table felt from any spills or heavy objects.',
+      'Check and organize cue sticks, chalk, and balls at the end of the day.',
+    ],
+    incorrectMistakesHi: [
+      'पूल टेबल पर कप, गिलास या भारी बैग रखना।',
+      'क्यू स्टिक्स को टेबल पर या दीवार के सहारे गिरा हुआ छोड़ना।',
+    ],
+    incorrectMistakesEn: [
+      'Resting mugs, glasses, or bags on the pool table.',
+      'Leaving cue sticks lying on the table or leaning loosely.',
+    ],
+    voiceScriptHi:
+      'भैया, पूल एरिया में सभी क्यू स्टिक्स को रैक में सीधा रखें, बॉल्स को व्यवस्थित करें और आसपास की सीटिंग साफ रखें। पूल टेबल के ऊपर कभी भी चाय, कॉफी या पानी का गिलास न रखें।',
+    voiceScriptEn:
+      'In the pool area, keep cue sticks neatly in the rack, organize the balls, and keep nearby seating tidy. Never place drinks or food on the pool table felt.',
+    updatedAt: '2026-11-11T05:00:00Z',
+  },
+  {
+    id: 'guide-light-combination-visitor',
+    category: 'light_combination_visitor',
+    titleHi: 'LIGHT COMBINATION – VISITOR/CLIENT MODE',
+    titleEn: 'LIGHT COMBINATION – VISITOR/CLIENT MODE',
+    subtitleHi: 'मेहमान व क्लाइंट आगमन के समय ऑफिस की प्रीमियम लाइटिंग सेटिंग',
+    subtitleEn: 'Dedicated lighting reference setup when visitors or clients arrive',
+    furnitureDetailsHi: 'विजिटर/क्लाइंट लाइटिंग स्विच कॉम्बिनेशन (Visitor/Client Lighting Switch Combination)',
+    furnitureDetailsEn: 'Visitor & client arrival lighting switch combination',
+    photoUrl: '',
+    photoCaptionHi: 'लाइट कॉम्बिनेशन (विजिटर/क्लाइंट मोड): एडमिन द्वारा वास्तविक लाइटिंग रेफरेंस फोटो अपलोड करने के लिए तैयार।',
+    photoCaptionEn: 'Light Combination – Visitor/Client Mode: Ready for Admin to upload actual lighting reference photos.',
+    incorrectPhotoUrl: undefined,
+    incorrectCaptionHi: 'गलत तरीका: क्लाइंट आने पर रिसेप्शन या मीटिंग रूम की मुख्य लाइटें बंद रखना।',
+    incorrectCaptionEn: 'Incorrect: Leaving reception or meeting room accent/main lights off during client visits.',
+    photos: [],
+    furniturePlacementHi: [
+      'क्लाइंट या विजिटर के आने से 10 मिनट पहले फोटो में दिखाए अनुसार सभी विजिटर-मोड लाइटें ऑन करें।',
+      'रिसेप्शन लोगो बैकलाइट, कॉरिडोर स्पॉटलाइट और मीटिंग रूम की वॉर्म लाइटें चालू रखें।',
+    ],
+    furniturePlacementEn: [
+      'Switch ON all Visitor Mode lights 10 minutes before client/visitor arrival as shown in reference photos.',
+      'Ensure reception logo backlight, corridor spotlights, and meeting room warm lights are ON.',
+    ],
+    waterAndItemsHi: [
+      'लाइटिंग सेटअप के साथ रिसेप्शन और संबंधित मीटिंग रूम में पानी व कोस्टर तैयार रखें।',
+    ],
+    waterAndItemsEn: [
+      'Pair the lighting setup with fresh water and coasters in reception and the assigned meeting room.',
+    ],
+    cleaningStandardHi: [
+      'स्विच बोर्ड साफ और बिना धब्बे के होने चाहिए।',
+      'यदि कोई बल्ब या स्ट्रिप लाइट काम न कर रही हो तो तुरंत एडमिन को सूचित करें।',
+    ],
+    cleaningStandardEn: [
+      'Keep switchboards clean and free of smudges.',
+      'Report any flickering or non-working bulbs/strips to Admin immediately.',
+    ],
+    lightsAndSwitchesHi: [
+      'रेफरेंस फोटो में दिखाए गए स्विच कॉम्बिनेशन का ठीक-ठीक पालन करें।',
+      'विजिटर के जाने के बाद आवश्यकतानुसार सामान्य एम्प्लॉई मोड पर स्विच करें।',
+    ],
+    lightsAndSwitchesEn: [
+      'Follow the exact switch combination shown in the uploaded reference photos.',
+      'Return to Employee Mode once the visitor/client visit concludes.',
+    ],
+    correctRulesHi: [
+      'क्लाइंट आगमन से पहले हमेशा रेफरेंस फोटो से लाइट कॉम्बिनेशन का मिलान करें।',
+    ],
+    correctRulesEn: [
+      'Always match the lighting setup against the reference photos before client arrival.',
+    ],
+    incorrectMistakesHi: [
+      'विजिटर मोड की मुख्य डेकोरेटिव या लोगो लाइटें बंद छोड़ देना।',
+    ],
+    incorrectMistakesEn: [
+      'Forgetting to turn on accent, logo, or reception showcase lights for visitors.',
+    ],
+    voiceScriptHi:
+      'भैया, जब भी कोई क्लाइंट या विजिटर ऑफिस आएं, तो विजिटर मोड की रेफरेंस फोटो देखकर सभी तय लाइटें, रिसेप्शन लोगो लाइट और मीटिंग रूम लाइट चालू कर दें।',
+    voiceScriptEn:
+      'Whenever visitors or clients arrive, switch on the Visitor/Client Mode lighting combination matching the reference photos, including reception and meeting room lights.',
+    updatedAt: '2026-11-11T05:00:00Z',
+  },
+  {
+    id: 'guide-light-combination-employee',
+    category: 'light_combination_employee',
+    titleHi: 'LIGHT COMBINATION – EMPLOYEE MODE',
+    titleEn: 'LIGHT COMBINATION – EMPLOYEE MODE',
+    subtitleHi: 'सामान्य कार्य घंटों के दौरान ऑफिस लाइटिंग और ऊर्जा बचत मानक',
+    subtitleEn: 'Standard lighting reference setup for normal employee working hours',
+    furnitureDetailsHi: 'एम्प्लॉई मोड लाइटिंग स्विच कॉम्बिनेशन (Normal Working Hours Lighting Combination)',
+    furnitureDetailsEn: 'Normal employee working hours lighting switch combination',
+    photoUrl: '',
+    photoCaptionHi: 'लाइट कॉम्बिनेशन (एम्प्लॉई मोड): एडमिन द्वारा वास्तविक लाइटिंग रेफरेंस फोटो अपलोड करने के लिए तैयार।',
+    photoCaptionEn: 'Light Combination – Employee Mode: Ready for Admin to upload actual lighting reference photos.',
+    incorrectPhotoUrl: undefined,
+    incorrectCaptionHi: 'गलत तरीका: खाली मीटिंग रूम में या अनावश्यक जोन में लाइटें चालू छोड़ना।',
+    incorrectCaptionEn: 'Incorrect: Leaving lights ON in unoccupied meeting rooms or unused zones.',
+    photos: [],
+    furniturePlacementHi: [
+      'सामान्य कार्य घंटों में केवल वर्कस्टेशन, रिसेप्शन बेसिक और जरूरी कॉरिडोर लाइटें चालू रखें।',
+      'खाली मीटिंग रूम और उपयोग में न होने वाले क्षेत्रों की लाइटें बंद रखें।',
+    ],
+    furniturePlacementEn: [
+      'During normal working hours, keep workstation, basic reception, and essential corridor lights ON.',
+      'Keep lights OFF in unoccupied meeting rooms and unused zones.',
+    ],
+    waterAndItemsHi: [
+      'कार्य समय के दौरान पैंट्री और वर्कस्टेशन क्षेत्रों में पर्याप्त रोशनी सुनिश्चित करें।',
+    ],
+    waterAndItemsEn: [
+      'Ensure comfortable, glare-free lighting across workstations and pantry during work hours.',
+    ],
+    cleaningStandardHi: [
+      'स्विच पैनल साफ रखें और किसी भी खराब लाइट की सूचना तुरंत एडमिन को दें।',
+    ],
+    cleaningStandardEn: [
+      'Keep switch panels clean and report any faulty lights to Admin.',
+    ],
+    lightsAndSwitchesHi: [
+      'एम्प्लॉई मोड की रेफरेंस फोटो के अनुसार स्विच सेट करें।',
+      'शाम को ऑफिस बंद करते समय सभी लाइटें और एसी बंद करना सुनिश्चित करें।',
+    ],
+    lightsAndSwitchesEn: [
+      'Set switches strictly according to the Employee Mode reference photos.',
+      'Turn off all lights and AC units at office closing time.',
+    ],
+    correctRulesHi: [
+      'बिजली बचत के लिए खाली कमरों की लाइटें हमेशा बंद रखें।',
+    ],
+    correctRulesEn: [
+      'Keep unoccupied room lights turned off to save energy.',
+    ],
+    incorrectMistakesHi: [
+      'पूरे दिन सभी शो-लाइट्स और खाली कमरों की लाइटें चालू छोड़ना।',
+    ],
+    incorrectMistakesEn: [
+      'Leaving all showcase lights and empty room lights ON all day.',
+    ],
+    voiceScriptHi:
+      'भैया, सामान्य कार्य समय में एम्प्लॉई मोड की रेफरेंस फोटो के अनुसार वर्कस्टेशन और जरूरी लाइटें ही चालू रखें। खाली मीटिंग रूम की लाइटें बंद रखें।',
+    voiceScriptEn:
+      'During normal working hours, follow the Employee Mode reference photos for workstation and essential lighting, and keep unoccupied rooms switched off.',
+    updatedAt: '2026-11-11T05:00:00Z',
+  },
 ];
 
 export const DEFAULT_SOPS: SOP[] = [

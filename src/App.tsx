@@ -60,10 +60,9 @@ export default function App() {
   const handleSelectUser = (user: User) => {
     setCurrentUser(user);
     StorageService.setCurrentUser(user);
-    // If selecting admin and currently on a restricted tab, go to admin or training
-    if (user.role === 'admin') {
-      // Allow full access
-    }
+    StorageService.init().then(() => {
+      refreshAllData();
+    });
   };
 
   const handleUpdateTask = (updatedTask: DailyTask) => {

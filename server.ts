@@ -57,10 +57,31 @@ const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
   }
 });
 
+// Ensure API responses are never stale-cached across devices or sessions
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
+// Allow cross-origin image loading across preview/dev/shared domains
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  next();
+});
+
 // Statically serve reference photos (permanent) and task completion photos (40-day retention)
 app.use('/uploads/reference', express.static(REFERENCE_UPLOADS_DIR));
 app.use('/uploads/completion', express.static(COMPLETION_UPLOADS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Return explicit 404 for missing upload files instead of falling through to SPA index.html
+app.use('/uploads', (req, res) => {
+  res.status(404).json({ error: 'Uploaded image file not found on server' });
+});
 
 
 // Initial seed data representing approved office training knowledge
@@ -895,6 +916,11 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   pantry: [],
   lights_equipment: [],
   workstations: [],
+  kitchen_area: [],
+  employee_desk_area: [],
+  pool_area: [],
+  light_combination_visitor: [],
+  light_combination_employee: [],
 };
 
 // Canonical Room Category Normalizer
@@ -947,6 +973,92 @@ function loadRoomPhotos(): Record<string, any[]> {
       hasChanges = true;
     }
   });
+
+  // Reconcile stored records with actual physical files in REFERENCE_UPLOADS_DIR
+  // Repairs broken legacy filenames when real uploaded files for that room exist on disk,
+  // and indexes any uploaded room files on disk that are not yet in room_photos.json.
+  try {
+    if (fs.existsSync(REFERENCE_UPLOADS_DIR)) {
+      const diskFiles = fs
+        .readdirSync(REFERENCE_UPLOADS_DIR)
+        .filter((f) => /\.(jpg|jpeg|png|webp|gif)$/i.test(f))
+        .sort();
+      const diskSet = new Set(diskFiles);
+
+      // Group disk files by category prefix: ref_<category>_<timestamp>_<rand>.<ext>
+      const filesByCat: Record<string, string[]> = {};
+      diskFiles.forEach((f) => {
+        const m = f.match(/^(?:ref|reference|incorrect)_(.+)_(\d{10,})_[a-z0-9]+\.[a-z0-9]+$/i);
+        if (m) {
+          const cat = normalizeRoomCategory(m[1]);
+          if (!filesByCat[cat]) filesByCat[cat] = [];
+          filesByCat[cat].push(f);
+        }
+      });
+
+      Object.keys(photosMap).forEach((cat) => {
+        const normCat = normalizeRoomCategory(cat);
+        const list = Array.isArray(photosMap[normCat]) ? photosMap[normCat] : [];
+        const catDiskFiles = filesByCat[normCat] || [];
+
+        // Track which disk files for this category are already validly referenced
+        const usedFiles = new Set<string>();
+        list.forEach((p) => {
+          const base = p.fileName || (p.url ? path.basename(p.url.split('?')[0]) : '');
+          if (base && diskSet.has(base)) {
+            usedFiles.add(base);
+          }
+        });
+
+        const availableFiles = catDiskFiles.filter((f) => !usedFiles.has(f));
+
+        // 1. Repair any record whose file does not exist on disk if an available disk file exists for this category
+        list.forEach((p) => {
+          const base = p.fileName || (p.url ? path.basename(p.url.split('?')[0]) : '');
+          if ((!base || !diskSet.has(base)) && availableFiles.length > 0) {
+            const replacement = availableFiles.shift()!;
+            usedFiles.add(replacement);
+            p.url = `/uploads/reference/${replacement}`;
+            p.fileName = replacement;
+            try {
+              const st = fs.statSync(path.join(REFERENCE_UPLOADS_DIR, replacement));
+              p.uploadedAt = st.mtime.toISOString();
+            } catch {}
+            hasChanges = true;
+          }
+        });
+
+        // 2. Append any remaining unreferenced disk files for this category
+        availableFiles.forEach((f) => {
+          let uploadedAt = new Date().toISOString();
+          try {
+            const st = fs.statSync(path.join(REFERENCE_UPLOADS_DIR, f));
+            uploadedAt = st.mtime.toISOString();
+          } catch {}
+          list.push({
+            id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            url: `/uploads/reference/${f}`,
+            fileName: f,
+            captionHi: `${normCat.replace(/_/g, ' ').toUpperCase()} - संदर्भ फोटो #${list.length + 1}`,
+            captionEn: `${normCat.replace(/_/g, ' ').toUpperCase()} - Reference Photo #${list.length + 1}`,
+            uploadedAt,
+            uploadedBy: 'Admin',
+            isPrimary: list.length === 0,
+            photoType: 'reference',
+          });
+          hasChanges = true;
+        });
+
+        if (list.length > 0 && !list.some((p) => p.isPrimary)) {
+          list[0].isPrimary = true;
+          hasChanges = true;
+        }
+        photosMap[normCat] = list;
+      });
+    }
+  } catch (err) {
+    console.warn('Error reconciling room photos with disk:', err);
+  }
 
   if (hasChanges) {
     saveRoomPhotos(photosMap);
@@ -1094,10 +1206,18 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
     photos.forEach((p: any, idx: number) => {
       if (!p.photoBase64) return;
       const permanentUrl = saveReferencePhoto(p.photoBase64, `ref_${normCat}`);
+      if (!permanentUrl || !permanentUrl.startsWith('/uploads/reference/')) {
+        throw new Error(`Failed to store image #${idx + 1} to server storage`);
+      }
+      const savedFileName = path.basename(permanentUrl);
+      if (!fs.existsSync(path.join(REFERENCE_UPLOADS_DIR, savedFileName))) {
+        throw new Error(`Image #${idx + 1} was not found on server storage after write`);
+      }
       const isFirst = allRoomPhotos[normCat].length === 0 && idx === 0;
       const newItem = {
         id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: permanentUrl,
+        fileName: savedFileName,
         captionHi: p.captionHi || `${roomName || normCat} संदर्भ फोटो #${allRoomPhotos[normCat].length + 1}`,
         captionEn: p.captionEn || `${roomName || normCat} reference angle #${allRoomPhotos[normCat].length + 1}`,
         uploadedAt: now,
@@ -1308,10 +1428,17 @@ function executePhotoReplacement(category: string, photoId: string, req: express
     }
 
     const permanentUrl = saveReferencePhoto(photoBase64, `ref_${normCat}`);
+    if (!permanentUrl || !permanentUrl.startsWith('/uploads/reference/')) {
+      return res.status(500).json({ error: 'Failed to store replacement image to server storage' });
+    }
+    const savedFileName = path.basename(permanentUrl);
+    if (!fs.existsSync(path.join(REFERENCE_UPLOADS_DIR, savedFileName))) {
+      return res.status(500).json({ error: 'Replacement image was not found on server storage after write' });
+    }
     const existing = list[idx];
 
     // Delete old physical file from disk if it was an uploaded file
-    if (existing && existing.url) {
+    if (existing && existing.url && existing.url !== permanentUrl) {
       deletePhysicalUploadFile(existing.url);
     }
     if (targetUrl && targetUrl !== permanentUrl) {
@@ -1321,6 +1448,7 @@ function executePhotoReplacement(category: string, photoId: string, req: express
     list[idx] = {
       ...existing,
       url: permanentUrl,
+      fileName: savedFileName,
       captionHi: captionHi ?? existing.captionHi,
       captionEn: captionEn ?? existing.captionEn,
       uploadedAt: new Date().toISOString(),
@@ -1795,6 +1923,13 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
 
     const normCat = normalizeRoomCategory(category);
     const permanentUrl = saveReferencePhoto(photoBase64, `${photoType}_${normCat}`);
+    if (!permanentUrl || !permanentUrl.startsWith('/uploads/reference/')) {
+      return res.status(500).json({ error: 'Failed to store image to server storage' });
+    }
+    const savedFileName = path.basename(permanentUrl);
+    if (!fs.existsSync(path.join(REFERENCE_UPLOADS_DIR, savedFileName))) {
+      return res.status(500).json({ error: 'Image was not found on server storage after write' });
+    }
     const now = new Date().toISOString();
 
     // Also append to room_photos gallery
@@ -1803,6 +1938,7 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
     allRoomPhotos[normCat].push({
       id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       url: permanentUrl,
+      fileName: savedFileName,
       captionHi: `${roomName || normCat} संदर्भ फोटो`,
       captionEn: `${roomName || normCat} Reference Photo`,
       uploadedAt: now,
