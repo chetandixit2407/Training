@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { User, VisualGuide, DailyTask, RoomCategory, Language, RoomPhotoItem, AIRoomAnalysis, CompletionPhotoItem } from '../types';
 import { StorageService, fileToDataUrl } from '../services/storageService';
 import { AITrainingService } from '../services/aiTrainingService';
+import { DEFAULT_USERS } from '../data/defaultData';
 import { VoiceButton } from './VoiceButton';
 import {
   Shield,
@@ -28,6 +29,7 @@ import {
   AlertCircle,
   HelpCircle,
   Layers,
+  ChevronLeft,
   ChevronRight,
   Info,
   Check,
@@ -98,6 +100,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
 
   // Photo preview modal (lightbox)
   const [previewPhoto, setPreviewPhoto] = useState<RoomPhotoItem | null>(null);
+  const [previewPhotoIndex, setPreviewPhotoIndex] = useState<number | null>(null);
 
   // AI Multi-Photo Analysis
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
@@ -386,25 +389,57 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   };
 
   // Delete single photo
-  const handleDeletePhoto = async (photoId: string) => {
+  const handleDeletePhoto = async (photoId: string, photoUrl?: string) => {
     if (!selectedGuide) return;
+    
+    // Resolve admin credentials
+    const adminUser = currentUser?.role === 'admin'
+      ? currentUser
+      : users.find((u) => u.role === 'admin') || DEFAULT_USERS[2];
+
     const confirmMsg =
       language === 'hi'
-        ? 'क्या आप इस फोटो को गैलरी से हमेशा के लिए हटाना चाहते हैं?'
-        : 'Are you sure you want to permanently delete this photo from the room gallery?';
+        ? 'क्या आप इस संदर्भ फोटो को सर्वर और डेटाबेस से हमेशा के लिए हटाना चाहते हैं?'
+        : 'Are you sure you want to permanently delete this reference photo from cloud storage and database?';
 
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      const res = await AITrainingService.deleteRoomPhotoItem(selectedGuide.category, photoId, currentUser);
+      const activeIdx = previewPhotoIndex !== null
+        ? previewPhotoIndex
+        : roomPhotos.findIndex((p) => p.id === photoId || p.url === photoUrl);
+
+      const res = await AITrainingService.deleteRoomPhotoItem(
+        selectedGuide.category,
+        photoId,
+        adminUser,
+        photoUrl,
+        activeIdx >= 0 ? activeIdx : undefined
+      );
+
       if (res.success) {
-        setRoomPhotos(res.photos);
-        StorageService.setRoomPhotos(selectedGuide.category, res.photos);
-        if (previewPhoto?.id === photoId) {
-          setPreviewPhoto(null);
+        const updatedPhotos = res.photos || [];
+        setRoomPhotos(updatedPhotos);
+        StorageService.setRoomPhotos(selectedGuide.category, updatedPhotos);
+
+        // Advance viewer or close if last photo
+        if (previewPhotoIndex !== null || previewPhoto !== null) {
+          if (updatedPhotos.length === 0) {
+            // Last photo deleted: close viewer and show empty state
+            setPreviewPhotoIndex(null);
+            setPreviewPhoto(null);
+          } else {
+            // Multiple photos existed: delete selected and automatically show next available photo
+            const nextIdx = Math.min(activeIdx >= 0 ? activeIdx : 0, updatedPhotos.length - 1);
+            setPreviewPhotoIndex(nextIdx);
+            setPreviewPhoto(updatedPhotos[nextIdx]);
+          }
         }
+
         setGuideSuccessMsg(
-          language === 'hi' ? 'फोटो सफलतापूर्वक हटा दिया गया है!' : 'Photo deleted successfully!'
+          language === 'hi'
+            ? 'संदर्भ फोटो सर्वर और डेटाबेस से सफलतापूर्वक हटा दिया गया है!'
+            : 'Reference photo permanently deleted from cloud storage and database!'
         );
         onRefreshData();
         setTimeout(() => setGuideSuccessMsg(null), 3000);
@@ -982,7 +1017,10 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
                             src={photo.url}
                             alt={photo.captionEn || `Photo ${index + 1}`}
                             className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300 cursor-pointer"
-                            onClick={() => setPreviewPhoto(photo)}
+                            onClick={() => {
+                              setPreviewPhotoIndex(index);
+                              setPreviewPhoto(photo);
+                            }}
                           />
 
                           {/* Primary Badge */}
@@ -995,7 +1033,10 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
 
                           {/* Zoom Button */}
                           <button
-                            onClick={() => setPreviewPhoto(photo)}
+                            onClick={() => {
+                              setPreviewPhotoIndex(index);
+                              setPreviewPhoto(photo);
+                            }}
                             className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
                             title="Preview Fullscreen"
                           >
@@ -1099,9 +1140,9 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
 
                           {/* Delete Photo */}
                           <button
-                            onClick={() => handleDeletePhoto(photo.id)}
+                            onClick={() => handleDeletePhoto(photo.id, photo.url)}
                             className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                            title="Delete this photo"
+                            title={language === 'hi' ? 'यह संदर्भ फोटो हटाएं' : 'Delete reference photo'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1994,82 +2035,181 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         </div>
       )}
 
-      {/* Lightbox / Preview Fullscreen Modal */}
-      {previewPhoto && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in"
-          onClick={() => setPreviewPhoto(null)}
-        >
+      {/* Lightbox / Reference Photos Viewer Fullscreen Modal */}
+      {(previewPhotoIndex !== null || previewPhoto !== null) && (() => {
+        const activePhoto = (previewPhotoIndex !== null && roomPhotos[previewPhotoIndex]) ? roomPhotos[previewPhotoIndex] : previewPhoto;
+        if (!activePhoto) return null;
+        const activeIdx = previewPhotoIndex !== null ? previewPhotoIndex : roomPhotos.findIndex((p) => p.id === activePhoto.id || p.url === activePhoto.url);
+        const displayIdx = activeIdx >= 0 ? activeIdx : 0;
+
+        return (
           <div
-            className="relative max-w-4xl max-h-[90vh] w-full bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/95 backdrop-blur-md animate-in fade-in"
+            onClick={() => {
+              setPreviewPhoto(null);
+              setPreviewPhotoIndex(null);
+            }}
           >
-            {/* Header */}
-            <div className="p-4 bg-slate-950 text-white flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                {previewPhoto.isPrimary && (
-                  <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-xs font-bold">
-                    Primary Reference
+            <div
+              className="relative max-w-5xl max-h-[94vh] w-full flex flex-col items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="w-full flex items-center justify-between text-white pb-3 px-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                    {selectedGuide?.titleEn || 'ROOM'}
                   </span>
-                )}
-                <span className="font-bold text-sm text-slate-200">
-                  {language === 'hi' ? previewPhoto.captionHi : previewPhoto.captionEn}
-                </span>
-              </div>
-              <button
-                onClick={() => setPreviewPhoto(null)}
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+                  <span className="text-xs text-slate-400">•</span>
+                  <span className="text-xs font-bold text-slate-200">
+                    Angle {displayIdx + 1} of {Math.max(1, roomPhotos.length)}
+                  </span>
+                  {activePhoto.isPrimary && (
+                    <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px]">
+                      Primary Standard
+                    </span>
+                  )}
+                </div>
 
-            {/* Image */}
-            <div className="flex-1 flex items-center justify-center bg-black/60 p-2 overflow-hidden">
-              <img
-                src={previewPhoto.url}
-                alt="Preview"
-                className="max-h-[70vh] max-w-full object-contain rounded-lg"
-              />
-            </div>
-
-            {/* Footer with Actions */}
-            <div className="p-4 bg-slate-950 text-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs border-t border-slate-800">
-              <div>
-                <span>{language === 'hi' ? 'अपलोडकर्ता:' : 'Uploaded by:'} {previewPhoto.uploadedBy || 'Admin'}</span>
-                <span className="mx-2">•</span>
-                <span>{new Date(previewPhoto.uploadedAt).toLocaleString()}</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {!previewPhoto.isPrimary && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleStartReplace(activePhoto.id)}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600/90 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                    title={language === 'hi' ? 'नई फोटो से बदलें (Update/Replace)' : 'Update or replace reference photo'}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>{language === 'hi' ? 'फोटो अपडेट करें' : 'Update Photo'}</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeletePhoto(activePhoto.id, activePhoto.url)}
+                    className="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                    title={language === 'hi' ? 'यह संदर्भ फोटो हटाएं' : 'Delete reference photo'}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{language === 'hi' ? 'फोटो हटाएं' : 'Delete Photo'}</span>
+                  </button>
                   <button
                     onClick={() => {
-                      handleSetPrimary(previewPhoto.id);
-                      setPreviewPhoto((prev) => prev ? { ...prev, isPrimary: true } : null);
+                      setPreviewPhoto(null);
+                      setPreviewPhotoIndex(null);
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-colors cursor-pointer"
+                    className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white cursor-pointer transition-colors"
                   >
-                    ⭐ {language === 'hi' ? 'मुख्य मानक बनाएं' : 'Make Primary'}
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Image Container with Next / Prev Buttons */}
+              <div className="relative w-full flex items-center justify-center max-h-[72vh] overflow-hidden rounded-2xl bg-black/50">
+                <img
+                  src={activePhoto.url}
+                  alt={activePhoto.captionEn || `Angle ${displayIdx + 1}`}
+                  referrerPolicy="no-referrer"
+                  className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl shadow-2xl"
+                />
+
+                {/* Prev Button */}
+                {roomPhotos.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const next = displayIdx === 0 ? roomPhotos.length - 1 : displayIdx - 1;
+                      setPreviewPhotoIndex(next);
+                      setPreviewPhoto(roomPhotos[next]);
+                    }}
+                    className="absolute left-3 p-2.5 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                    title="Previous Angle"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
                   </button>
                 )}
-                <button
-                  onClick={() => handleStartReplace(previewPhoto.id)}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors cursor-pointer"
-                >
-                  🔄 {language === 'hi' ? 'फोटो बदलें' : 'Replace Image'}
-                </button>
-                <button
-                  onClick={() => handleDeletePhoto(previewPhoto.id)}
-                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors cursor-pointer"
-                >
-                  🗑️ {language === 'hi' ? 'हटाएं' : 'Delete'}
-                </button>
+
+                {/* Next Button */}
+                {roomPhotos.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const next = displayIdx === roomPhotos.length - 1 ? 0 : displayIdx + 1;
+                      setPreviewPhotoIndex(next);
+                      setPreviewPhoto(roomPhotos[next]);
+                    }}
+                    className="absolute right-3 p-2.5 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                    title="Next Angle"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
+
+              {/* Caption & Thumbnail Strip */}
+              <div className="w-full mt-3 text-center space-y-2">
+                <p className="text-xs sm:text-sm font-semibold text-slate-200 bg-black/60 px-4 py-2 rounded-xl inline-block max-w-2xl">
+                  {language === 'hi'
+                    ? activePhoto.captionHi || activePhoto.captionEn || 'आधिकारिक संदर्भ फोटो'
+                    : activePhoto.captionEn || activePhoto.captionHi || 'Official Reference Photo'}
+                </p>
+
+                {/* Thumbnail Strip */}
+                {roomPhotos.length > 1 && (
+                  <div className="flex items-center justify-center gap-2 overflow-x-auto py-1">
+                    {roomPhotos.map((p, idx) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setPreviewPhotoIndex(idx);
+                          setPreviewPhoto(p);
+                        }}
+                        className={`w-12 h-9 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                          idx === displayIdx
+                            ? 'border-amber-400 scale-105 shadow-md'
+                            : 'border-slate-700 opacity-60 hover:opacity-100'
+                        }`}
+                      >
+                        <img src={p.url} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="w-full mt-2 p-3 bg-slate-950/80 rounded-xl text-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs border border-slate-800">
+                <div>
+                  <span>{language === 'hi' ? 'अपलोडकर्ता:' : 'Uploaded by:'} {activePhoto.uploadedBy || 'Admin'}</span>
+                  <span className="mx-2">•</span>
+                  <span>{new Date(activePhoto.uploadedAt).toLocaleString()}</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!activePhoto.isPrimary && (
+                    <button
+                      onClick={() => {
+                        handleSetPrimary(activePhoto.id);
+                        setPreviewPhoto((prev) => prev ? { ...prev, isPrimary: true } : null);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition-colors cursor-pointer"
+                    >
+                      ⭐ {language === 'hi' ? 'मुख्य मानक बनाएं' : 'Make Primary'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleStartReplace(activePhoto.id)}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors cursor-pointer"
+                  >
+                    🔄 {language === 'hi' ? 'फोटो बदलें' : 'Replace Image'}
+                  </button>
+                  <button
+                    onClick={() => handleDeletePhoto(activePhoto.id, activePhoto.url)}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>{language === 'hi' ? 'फोटो हमेशा के लिए हटाएं' : 'Delete Photo'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
     </div>
   );

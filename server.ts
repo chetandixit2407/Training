@@ -867,6 +867,16 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   ],
 };
 
+// Canonical Room Category Normalizer
+function normalizeRoomCategory(cat: string): string {
+  if (!cat) return 'general';
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/^guide[-_]/, '')
+    .replace(/-/g, '_');
+}
+
 // Persistent Room Photos Management
 function loadRoomPhotos(): Record<string, any[]> {
   let photosMap: Record<string, any[]> = {};
@@ -874,26 +884,41 @@ function loadRoomPhotos(): Record<string, any[]> {
   try {
     if (fs.existsSync(ROOM_PHOTOS_FILE)) {
       const data = fs.readFileSync(ROOM_PHOTOS_FILE, 'utf-8');
-      photosMap = JSON.parse(data);
-      fileExisted = true;
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === 'object') {
+        fileExisted = true;
+        // Normalize all stored keys so hyphens/prefixes don't create duplicate rooms
+        Object.keys(parsed).forEach((key) => {
+          const normKey = normalizeRoomCategory(key);
+          if (Array.isArray(parsed[key])) {
+            photosMap[normKey] = parsed[key];
+          }
+        });
+      }
     }
   } catch (err) {
     console.error('Error reading room_photos.json:', err);
   }
 
   // Ensure every room category key exists.
-  // If the file did not exist at all, populate default photos.
-  // If the room key is undefined, populate default photos.
-  // If the room key exists as an array (even if empty []), respect the user's deletion!
+  // ONLY if the file did NOT exist at all, populate default seed photos.
+  // If the file existed and a room key is an empty array [], respect the Admin's deletion!
+  // Never restore deleted photos.
   let hasChanges = false;
   Object.keys(DEFAULT_ROOM_PHOTOS).forEach((cat) => {
-    if (photosMap[cat] === undefined) {
-      photosMap[cat] = [...DEFAULT_ROOM_PHOTOS[cat]];
+    const normCat = normalizeRoomCategory(cat);
+    if (photosMap[normCat] === undefined) {
+      if (!fileExisted) {
+        photosMap[normCat] = [...DEFAULT_ROOM_PHOTOS[cat]];
+      } else {
+        // Room was created or has no photos; keep as empty array, do NOT restore defaults
+        photosMap[normCat] = [];
+      }
       hasChanges = true;
     }
   });
 
-  if (hasChanges && (!fileExisted || Object.keys(photosMap).length > 0)) {
+  if (hasChanges) {
     saveRoomPhotos(photosMap);
   }
 
@@ -902,7 +927,13 @@ function loadRoomPhotos(): Record<string, any[]> {
 
 function saveRoomPhotos(data: Record<string, any[]>): void {
   try {
-    fs.writeFileSync(ROOM_PHOTOS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    // Ensure all keys are normalized before saving
+    const normalizedData: Record<string, any[]> = {};
+    Object.keys(data).forEach((key) => {
+      const normKey = normalizeRoomCategory(key);
+      normalizedData[normKey] = Array.isArray(data[key]) ? data[key] : [];
+    });
+    fs.writeFileSync(ROOM_PHOTOS_FILE, JSON.stringify(normalizedData, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error saving room_photos.json:', err);
   }
@@ -991,14 +1022,16 @@ app.get('/api/photos/all-rooms', (req, res) => {
 
 // 2. GET SINGLE ROOM REFERENCE PHOTOS
 app.get('/api/photos/room/:category', (req, res) => {
-  const { category } = req.params;
+  const normCat = normalizeRoomCategory(req.params.category);
   const photos = loadRoomPhotos();
   const analyses = loadRoomAnalysis();
+  const roomList = photos[normCat] || photos[req.params.category] || [];
+  const roomAnalysis = analyses[normCat] || analyses[req.params.category] || null;
   res.json({
     success: true,
-    category,
-    photos: photos[category] || [],
-    analysis: analyses[category] || null,
+    category: normCat,
+    photos: roomList,
+    analysis: roomAnalysis,
   });
 });
 
@@ -1013,9 +1046,10 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
       return res.status(400).json({ error: 'Array of photo objects is required' });
     }
 
+    const normCat = normalizeRoomCategory(category);
     const allRoomPhotos = loadRoomPhotos();
-    if (!allRoomPhotos[category]) {
-      allRoomPhotos[category] = [];
+    if (!allRoomPhotos[normCat]) {
+      allRoomPhotos[normCat] = [];
     }
 
     const now = new Date().toISOString();
@@ -1024,35 +1058,35 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
 
     photos.forEach((p: any, idx: number) => {
       if (!p.photoBase64) return;
-      const permanentUrl = saveBase64Image(p.photoBase64, `ref_${category}`);
-      const isFirst = allRoomPhotos[category].length === 0 && idx === 0;
+      const permanentUrl = saveReferencePhoto(p.photoBase64, `ref_${normCat}`);
+      const isFirst = allRoomPhotos[normCat].length === 0 && idx === 0;
       const newItem = {
-        id: `photo_${category}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: permanentUrl,
-        captionHi: p.captionHi || `${roomName || category} संदर्भ फोटो #${allRoomPhotos[category].length + 1}`,
-        captionEn: p.captionEn || `${roomName || category} reference angle #${allRoomPhotos[category].length + 1}`,
+        captionHi: p.captionHi || `${roomName || normCat} संदर्भ फोटो #${allRoomPhotos[normCat].length + 1}`,
+        captionEn: p.captionEn || `${roomName || normCat} reference angle #${allRoomPhotos[normCat].length + 1}`,
         uploadedAt: now,
         uploadedBy: adminName,
         isPrimary: p.isPrimary ?? isFirst,
         photoType: p.photoType || 'reference',
       };
-      allRoomPhotos[category].push(newItem);
+      allRoomPhotos[normCat].push(newItem);
       addedItems.push(newItem);
     });
 
     // Ensure at least one photo is primary
-    const hasPrimary = allRoomPhotos[category].some((p) => p.isPrimary);
-    if (!hasPrimary && allRoomPhotos[category].length > 0) {
-      allRoomPhotos[category][0].isPrimary = true;
+    const hasPrimary = allRoomPhotos[normCat].some((p) => p.isPrimary);
+    if (!hasPrimary && allRoomPhotos[normCat].length > 0) {
+      allRoomPhotos[normCat][0].isPrimary = true;
     }
 
     saveRoomPhotos(allRoomPhotos);
 
     // Sync primary photo to knowledge base & visual guide
-    const primaryItem = allRoomPhotos[category].find((p) => p.isPrimary) || allRoomPhotos[category][0];
+    const primaryItem = allRoomPhotos[normCat].find((p) => p.isPrimary) || allRoomPhotos[normCat][0];
     if (primaryItem) {
       const records = loadKnowledgeBase();
-      const kb = records.find((r) => r.category === category);
+      const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
       if (kb) {
         kb.referencePhotoUrl = primaryItem.url;
         kb.updatedAt = now;
@@ -1060,9 +1094,10 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
       }
 
       const guides = loadGuides();
-      const g = guides.find((item: any) => item.category === category);
+      const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
       if (g) {
         g.photoUrl = primaryItem.url;
+        g.photos = allRoomPhotos[normCat];
         g.updatedAt = now;
         saveGuides(guides);
       }
@@ -1070,8 +1105,8 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
 
     res.json({
       success: true,
-      message: `${addedItems.length} photos uploaded and saved permanently for ${roomName || category}!`,
-      photos: allRoomPhotos[category],
+      message: `${addedItems.length} photos uploaded and saved permanently for ${roomName || normCat}!`,
+      photos: allRoomPhotos[normCat],
       added: addedItems,
     });
   } catch (err: any) {
@@ -1084,13 +1119,21 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
 app.post('/api/photos/room/:category/item/:photoId/primary', requireAdmin, (req, res) => {
   try {
     const { category, photoId } = req.params;
+    const normCat = normalizeRoomCategory(category);
+    const decodedId = decodeURIComponent(photoId);
     const allRoomPhotos = loadRoomPhotos();
-    const list = allRoomPhotos[category] || [];
+    const list = allRoomPhotos[normCat] || [];
     let found = false;
     let primaryUrl = '';
 
     list.forEach((p) => {
-      if (p.id === photoId) {
+      const isMatch =
+        p.id === photoId ||
+        p.id === decodedId ||
+        p.url === photoId ||
+        p.url === decodedId ||
+        path.basename(p.url || '') === path.basename(photoId || decodedId);
+      if (isMatch) {
         p.isPrimary = true;
         primaryUrl = p.url;
         found = true;
@@ -1103,16 +1146,26 @@ app.post('/api/photos/room/:category/item/:photoId/primary', requireAdmin, (req,
       return res.status(404).json({ error: 'Photo not found in this room gallery' });
     }
 
-    allRoomPhotos[category] = list;
+    allRoomPhotos[normCat] = list;
     saveRoomPhotos(allRoomPhotos);
 
     // Sync knowledge base
     const records = loadKnowledgeBase();
-    const kb = records.find((r) => r.category === category);
+    const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
     if (kb && primaryUrl) {
       kb.referencePhotoUrl = primaryUrl;
       kb.updatedAt = new Date().toISOString();
       saveKnowledgeBase(records);
+    }
+
+    // Sync guides
+    const guides = loadGuides();
+    const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
+    if (g && primaryUrl) {
+      g.photoUrl = primaryUrl;
+      g.photos = list;
+      g.updatedAt = new Date().toISOString();
+      saveGuides(guides);
     }
 
     res.json({
@@ -1129,16 +1182,25 @@ app.post('/api/photos/room/:category/item/:photoId/primary', requireAdmin, (req,
 app.post('/api/photos/room/:category/item/:photoId/caption', requireAdmin, (req, res) => {
   try {
     const { category, photoId } = req.params;
+    const normCat = normalizeRoomCategory(category);
+    const decodedId = decodeURIComponent(photoId);
     const { captionHi, captionEn } = req.body;
     const allRoomPhotos = loadRoomPhotos();
-    const list = allRoomPhotos[category] || [];
-    const item = list.find((p) => p.id === photoId);
+    const list = allRoomPhotos[normCat] || [];
+    const item = list.find(
+      (p) =>
+        p.id === photoId ||
+        p.id === decodedId ||
+        p.url === photoId ||
+        p.url === decodedId ||
+        path.basename(p.url || '') === path.basename(photoId || decodedId)
+    );
     if (!item) {
       return res.status(404).json({ error: 'Photo not found' });
     }
     if (captionHi !== undefined) item.captionHi = captionHi;
     if (captionEn !== undefined) item.captionEn = captionEn;
-    allRoomPhotos[category] = list;
+    allRoomPhotos[normCat] = list;
     saveRoomPhotos(allRoomPhotos);
 
     res.json({ success: true, message: 'Caption updated', photos: list });
@@ -1147,35 +1209,78 @@ app.post('/api/photos/room/:category/item/:photoId/caption', requireAdmin, (req,
   }
 });
 
-// 6. REPLACE INDIVIDUAL PHOTO (Admin only)
-app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req, res) => {
+// Helper function to execute photo replacement and full database synchronization
+function executePhotoReplacement(category: string, photoId: string, req: express.Request, res: express.Response) {
   try {
-    const { category, photoId } = req.params;
+    const normCat = normalizeRoomCategory(category);
+    const decodedId = decodeURIComponent(photoId || '');
     const { photoBase64, captionHi, captionEn } = req.body;
+    const targetUrl = (req.body?.url || req.body?.photoUrl || req.query?.url || '').toString().trim();
+    const targetPhotoId = (req.body?.photoId || req.query?.photoId || photoId || '').toString().trim();
+
     if (!photoBase64) {
       return res.status(400).json({ error: 'New photo base64 is required' });
     }
+
     const allRoomPhotos = loadRoomPhotos();
-    const list = allRoomPhotos[category] || [];
-    const idx = list.findIndex((p) => p.id === photoId);
+    let catKey = Object.keys(allRoomPhotos).find((k) => normalizeRoomCategory(k) === normCat) || normCat;
+    let list = allRoomPhotos[catKey] || [];
+
+    // Find index of photo to replace with multi-criteria matching
+    let idx = list.findIndex((p) => {
+      if (p.id && (p.id === targetPhotoId || p.id === photoId || p.id === decodedId)) return true;
+      if (p.url && (p.url === targetPhotoId || p.url === photoId || p.url === decodedId || p.url === targetUrl)) return true;
+      const baseP = path.basename(p.url || '');
+      const baseTarget = path.basename(targetPhotoId || photoId || decodedId || targetUrl || '');
+      if (baseP && baseTarget && baseP === baseTarget) return true;
+      if (targetPhotoId.endsWith('_default') && list.length === 1) return true;
+      return false;
+    });
+
+    if (idx === -1 && list.length === 1) {
+      idx = 0;
+    }
+
+    if (idx === -1) {
+      const pIdx = Number(req.body?.photoIndex ?? req.query?.photoIndex);
+      if (!isNaN(pIdx) && pIdx >= 0 && pIdx < list.length) {
+        idx = pIdx;
+      }
+    }
+
+    // Fallback search across all room categories
+    if (idx === -1) {
+      for (const k of Object.keys(allRoomPhotos)) {
+        const candidateList = allRoomPhotos[k];
+        const matchIdx = candidateList.findIndex((p) => {
+          if (p.id && (p.id === targetPhotoId || p.id === photoId || p.id === decodedId)) return true;
+          if (p.url && (p.url === targetPhotoId || p.url === photoId || p.url === decodedId || p.url === targetUrl)) return true;
+          const baseP = path.basename(p.url || '');
+          const baseTarget = path.basename(targetPhotoId || photoId || decodedId || targetUrl || '');
+          return baseP && baseTarget && baseP === baseTarget;
+        });
+        if (matchIdx !== -1) {
+          catKey = k;
+          list = candidateList;
+          idx = matchIdx;
+          break;
+        }
+      }
+    }
+
     if (idx === -1) {
       return res.status(404).json({ error: 'Photo not found to replace' });
     }
 
-    const permanentUrl = saveBase64Image(photoBase64, `ref_${category}`);
+    const permanentUrl = saveReferencePhoto(photoBase64, `ref_${normCat}`);
     const existing = list[idx];
 
-    // Delete old physical file from disk if it was in uploads directory
-    if (existing && existing.url && existing.url.startsWith('/uploads/')) {
-      try {
-        const basename = path.basename(existing.url);
-        const refPath = path.join(REFERENCE_UPLOADS_DIR, basename);
-        if (fs.existsSync(refPath)) fs.unlinkSync(refPath);
-        const genPath = path.join(UPLOADS_DIR, basename);
-        if (fs.existsSync(genPath)) fs.unlinkSync(genPath);
-      } catch (unlinkErr) {
-        console.warn('Could not unlink replaced reference photo:', unlinkErr);
-      }
+    // Delete old physical file from disk if it was an uploaded file
+    if (existing && existing.url) {
+      deletePhysicalUploadFile(existing.url);
+    }
+    if (targetUrl && targetUrl !== permanentUrl) {
+      deletePhysicalUploadFile(targetUrl);
     }
 
     list[idx] = {
@@ -1184,87 +1289,196 @@ app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req,
       captionHi: captionHi ?? existing.captionHi,
       captionEn: captionEn ?? existing.captionEn,
       uploadedAt: new Date().toISOString(),
-      uploadedBy: (req.body?.adminName || 'Admin') as string,
+      uploadedBy: (req.body?.adminName || req.headers['x-user-name'] || 'Admin') as string,
     };
 
-    allRoomPhotos[category] = list;
+    allRoomPhotos[catKey] = list;
     saveRoomPhotos(allRoomPhotos);
 
-    if (list[idx].isPrimary) {
-      const records = loadKnowledgeBase();
-      const kb = records.find((r) => r.category === category);
-      if (kb) {
-        kb.referencePhotoUrl = permanentUrl;
-        kb.updatedAt = new Date().toISOString();
-        saveKnowledgeBase(records);
+    // Sync Knowledge Base, Guides, Tasks
+    const primaryItem = list.find((p) => p.isPrimary) || list[0];
+    const newPrimaryUrl = primaryItem ? primaryItem.url : permanentUrl;
+
+    const records = loadKnowledgeBase();
+    const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
+    if (kb) {
+      if (list[idx].isPrimary || kb.referencePhotoUrl === existing?.url || !kb.referencePhotoUrl) {
+        kb.referencePhotoUrl = newPrimaryUrl;
       }
-      const guides = loadGuides();
-      const g = guides.find((item: any) => item.category === category);
-      if (g) {
-        g.photoUrl = permanentUrl;
-        g.updatedAt = new Date().toISOString();
-        saveGuides(guides);
+      kb.updatedAt = new Date().toISOString();
+      saveKnowledgeBase(records);
+    }
+
+    const guides = loadGuides();
+    const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
+    if (g) {
+      if (list[idx].isPrimary || g.photoUrl === existing?.url || !g.photoUrl) {
+        g.photoUrl = newPrimaryUrl;
+      }
+      g.photos = list;
+      g.updatedAt = new Date().toISOString();
+      saveGuides(guides);
+    }
+
+    const tasks = loadTasks();
+    let tasksChanged = false;
+    tasks.forEach((t: any) => {
+      if (normalizeRoomCategory(t.roomCategory) === normCat) {
+        if (!t.referencePhotoUrl || t.referencePhotoUrl === existing?.url || t.referencePhotoUrl === targetUrl) {
+          t.referencePhotoUrl = newPrimaryUrl;
+          tasksChanged = true;
+        }
+      }
+    });
+    if (tasksChanged) {
+      saveTasks(tasks);
+    }
+
+    console.log(`[PHOTO_REPLACE_SUCCESS] Successfully replaced reference photo in room ${normCat}. New URL: ${permanentUrl}`);
+
+    res.json({
+      success: true,
+      message: 'Photo replaced successfully',
+      photos: list,
+      replacedPhoto: list[idx],
+    });
+  } catch (err: any) {
+    console.error('Error replacing photo:', err);
+    res.status(500).json({ error: err.message || 'Failed to replace photo' });
+  }
+}
+
+// 6. REPLACE INDIVIDUAL PHOTO (Admin only - supports URL params and body alias)
+app.post('/api/photos/room/:category/item/:photoId/replace', requireAdmin, (req, res) => {
+  executePhotoReplacement(req.params.category, req.params.photoId, req, res);
+});
+
+app.post('/api/photos/replace-item', requireAdmin, (req, res) => {
+  const category = req.body?.category || req.query?.category || '';
+  const photoId = req.body?.photoId || req.query?.photoId || '';
+  executePhotoReplacement(category, photoId, req, res);
+});
+
+// Helper function to execute photo deletion and full database synchronization
+function executePhotoDeletion(category: string, photoId: string, req: express.Request, res: express.Response) {
+  try {
+    const normCat = normalizeRoomCategory(category);
+    const decodedId = decodeURIComponent(photoId || '');
+    const targetUrl = (req.body?.url || req.query?.url || '').toString().trim();
+    const targetPhotoId = (req.body?.photoId || req.query?.photoId || photoId || '').toString().trim();
+
+    const allRoomPhotos = loadRoomPhotos();
+    let catKey = Object.keys(allRoomPhotos).find((k) => normalizeRoomCategory(k) === normCat) || normCat;
+    let list = allRoomPhotos[catKey] || [];
+
+    // Find index of photo to delete with multi-angle matching
+    let idx = list.findIndex((p) => {
+      if (p.id && (p.id === targetPhotoId || p.id === photoId || p.id === decodedId)) return true;
+      if (p.url && (p.url === targetPhotoId || p.url === photoId || p.url === decodedId || p.url === targetUrl)) return true;
+      const baseP = path.basename(p.url || '');
+      const baseTarget = path.basename(targetPhotoId || photoId || decodedId || targetUrl || '');
+      if (baseP && baseTarget && baseP === baseTarget) return true;
+      // Handle synthetic ID like photo_prestige_loft_default or photo_prestige_1
+      if (targetPhotoId.endsWith('_default') && list.length === 1) return true;
+      return false;
+    });
+
+    // If still not found and the gallery has exactly 1 photo, match that photo
+    if (idx === -1 && list.length === 1) {
+      idx = 0;
+    }
+
+    // Match by explicit photoIndex if passed from carousel viewer
+    if (idx === -1) {
+      const pIdx = Number(req.body?.photoIndex ?? req.query?.photoIndex);
+      if (!isNaN(pIdx) && pIdx >= 0 && pIdx < list.length) {
+        idx = pIdx;
       }
     }
 
-    res.json({ success: true, message: 'Photo replaced successfully', photos: list });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to replace photo' });
-  }
-});
-
-// 7. DELETE INDIVIDUAL PHOTO FROM ROOM (Admin only)
-app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) => {
-  try {
-    const { category, photoId } = req.params;
-    const decodedId = decodeURIComponent(photoId);
-    const allRoomPhotos = loadRoomPhotos();
-    const list = allRoomPhotos[category] || [];
-    const idx = list.findIndex(
-      (p) =>
-        p.id === photoId ||
-        p.id === decodedId ||
-        p.url === photoId ||
-        p.url === decodedId ||
-        path.basename(p.url || '') === photoId ||
-        path.basename(p.url || '') === decodedId
-    );
+    // Fallback: If not found in current category, search across all categories
+    let removedPhoto: any = null;
     if (idx === -1) {
+      for (const k of Object.keys(allRoomPhotos)) {
+        const candidateList = allRoomPhotos[k];
+        const matchIdx = candidateList.findIndex((p) => {
+          if (p.id && (p.id === targetPhotoId || p.id === photoId || p.id === decodedId)) return true;
+          if (p.url && (p.url === targetPhotoId || p.url === photoId || p.url === decodedId || p.url === targetUrl)) return true;
+          const baseP = path.basename(p.url || '');
+          const baseTarget = path.basename(targetPhotoId || photoId || decodedId || targetUrl || '');
+          return baseP && baseTarget && baseP === baseTarget;
+        });
+        if (matchIdx !== -1) {
+          catKey = k;
+          list = candidateList;
+          idx = matchIdx;
+          break;
+        }
+      }
+    }
+
+    if (idx === -1) {
+      // Check if this was a reference photo URL in knowledge base directly
+      const records = loadKnowledgeBase();
+      const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
+      if (kb && (kb.referencePhotoUrl === targetUrl || kb.referencePhotoUrl === photoId || path.basename(kb.referencePhotoUrl || '') === path.basename(targetUrl || photoId || ''))) {
+        deletePhysicalUploadFile(kb.referencePhotoUrl);
+        kb.referencePhotoUrl = '';
+        kb.updatedAt = new Date().toISOString();
+        saveKnowledgeBase(records);
+        return res.json({
+          success: true,
+          message: 'Reference photo permanently deleted from database and storage',
+          photos: list,
+          primaryPhotoUrl: '',
+        });
+      }
       return res.status(404).json({ error: 'Photo not found in this room gallery' });
     }
 
-    const removed = list.splice(idx, 1)[0];
-    if (removed.isPrimary && list.length > 0) {
-      list[0].isPrimary = true;
+    removedPhoto = list.splice(idx, 1)[0];
+
+    // If removed photo was primary or no photo is marked primary, make first remaining photo primary
+    if (list.length > 0) {
+      const hasPrimary = list.some((p) => p.isPrimary);
+      if (!hasPrimary) {
+        list[0].isPrimary = true;
+      }
     }
 
-    // Permanently unlink physical file from disk across all upload directories
-    if (removed && removed.url) {
-      deletePhysicalUploadFile(removed.url);
+    // Permanently unlink physical file from disk across storage
+    if (removedPhoto && removedPhoto.url) {
+      deletePhysicalUploadFile(removedPhoto.url);
+    }
+    if (targetUrl) {
+      deletePhysicalUploadFile(targetUrl);
     }
 
-    allRoomPhotos[category] = list;
+    allRoomPhotos[catKey] = list;
     saveRoomPhotos(allRoomPhotos);
 
-    // Sync primary photo across knowledge base
+    // Determine new primary photo URL
     const primaryItem = list.find((p) => p.isPrimary) || list[0];
+    const newPrimaryUrl = primaryItem ? primaryItem.url : '';
+
+    // Synchronize Knowledge Base
     const records = loadKnowledgeBase();
-    const kb = records.find((r) => r.category === category);
+    const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
     if (kb) {
-      kb.referencePhotoUrl = primaryItem ? primaryItem.url : '';
-      if (kb.incorrectPhotoUrl === removed?.url || removed?.photoType === 'incorrect') {
+      kb.referencePhotoUrl = newPrimaryUrl;
+      if (kb.incorrectPhotoUrl === removedPhoto?.url || kb.incorrectPhotoUrl === targetUrl || removedPhoto?.photoType === 'incorrect') {
         kb.incorrectPhotoUrl = undefined;
       }
       kb.updatedAt = new Date().toISOString();
       saveKnowledgeBase(records);
     }
 
-    // Sync guides.json
+    // Synchronize guides.json
     const guides = loadGuides();
-    const g = guides.find((item: any) => item.category === category);
+    const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
     if (g) {
-      g.photoUrl = primaryItem ? primaryItem.url : '';
-      if (g.incorrectPhotoUrl === removed?.url || removed?.photoType === 'incorrect') {
+      g.photoUrl = newPrimaryUrl;
+      if (g.incorrectPhotoUrl === removedPhoto?.url || g.incorrectPhotoUrl === targetUrl) {
         g.incorrectPhotoUrl = undefined;
       }
       g.photos = list;
@@ -1272,29 +1486,53 @@ app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) 
       saveGuides(guides);
     }
 
-    // Sync tasks.json if any task pointed to this reference photo
+    // Synchronize tasks.json
     const tasks = loadTasks();
     let tasksChanged = false;
     tasks.forEach((t: any) => {
-      if (t.roomCategory === category && (!t.referencePhotoUrl || t.referencePhotoUrl === removed?.url)) {
-        t.referencePhotoUrl = primaryItem ? primaryItem.url : '';
-        tasksChanged = true;
+      if (normalizeRoomCategory(t.roomCategory) === normCat) {
+        if (!t.referencePhotoUrl || t.referencePhotoUrl === removedPhoto?.url || t.referencePhotoUrl === targetUrl) {
+          t.referencePhotoUrl = newPrimaryUrl;
+          tasksChanged = true;
+        }
       }
     });
     if (tasksChanged) {
       saveTasks(tasks);
     }
 
-    res.json({
+    console.log(`[PHOTO_DELETE_SUCCESS] Permanently deleted reference photo ${photoId} from room ${normCat}. Remaining photos: ${list.length}`);
+
+    return res.json({
       success: true,
-      message: 'Photo deleted permanently from disk and room gallery',
+      message: 'Reference photo permanently deleted from disk storage and room gallery',
       photos: list,
+      removedPhotoId: photoId,
+      primaryPhotoUrl: newPrimaryUrl,
     });
   } catch (err: any) {
     console.error('Error deleting photo item:', err);
-    res.status(500).json({ error: err.message || 'Failed to delete photo' });
+    return res.status(500).json({ error: err.message || 'Failed to delete photo' });
   }
+}
+
+// 7. DELETE INDIVIDUAL PHOTO FROM ROOM (Admin only - supports DELETE & POST)
+app.delete('/api/photos/room/:category/item/:photoId', requireAdmin, (req, res) => {
+  executePhotoDeletion(req.params.category, req.params.photoId, req, res);
 });
+
+// Safe POST alias for delete to prevent proxy/encoding URL parameter drop
+app.post('/api/photos/room/:category/item/:photoId/delete', requireAdmin, (req, res) => {
+  executePhotoDeletion(req.params.category, req.params.photoId, req, res);
+});
+
+// General POST endpoint for deleting a reference photo by category + photoId or url
+app.post('/api/photos/delete-item', requireAdmin, (req, res) => {
+  const category = req.body?.category || req.query?.category || '';
+  const photoId = req.body?.photoId || req.query?.photoId || '';
+  executePhotoDeletion(category, photoId, req, res);
+});
+
 
 // Helper to generate expert fallback analysis when Gemini API key is unset or rate limited
 function generateFallbackRoomAnalysis(category: string, roomName: string, count: number) {
@@ -1493,32 +1731,32 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
       return res.status(400).json({ error: 'Photo base64 data is required for upload.' });
     }
 
-    const safeCat = category || 'general';
-    const permanentUrl = saveBase64Image(photoBase64, `${photoType}_${safeCat}`);
+    const normCat = normalizeRoomCategory(category);
+    const permanentUrl = saveReferencePhoto(photoBase64, `${photoType}_${normCat}`);
     const now = new Date().toISOString();
 
     // Also append to room_photos gallery
     const allRoomPhotos = loadRoomPhotos();
-    if (!allRoomPhotos[safeCat]) allRoomPhotos[safeCat] = [];
-    allRoomPhotos[safeCat].push({
-      id: `photo_${safeCat}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    if (!allRoomPhotos[normCat]) allRoomPhotos[normCat] = [];
+    allRoomPhotos[normCat].push({
+      id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       url: permanentUrl,
-      captionHi: `${roomName || safeCat} संदर्भ फोटो`,
-      captionEn: `${roomName || safeCat} Reference Photo`,
+      captionHi: `${roomName || normCat} संदर्भ फोटो`,
+      captionEn: `${roomName || normCat} Reference Photo`,
       uploadedAt: now,
       uploadedBy: req.body?.adminName || 'Admin',
       isPrimary: true,
       photoType,
     });
     // Set all others to false
-    allRoomPhotos[safeCat].forEach((p, idx) => {
-      if (idx !== allRoomPhotos[safeCat].length - 1) p.isPrimary = false;
+    allRoomPhotos[normCat].forEach((p, idx) => {
+      if (idx !== allRoomPhotos[normCat].length - 1) p.isPrimary = false;
     });
     saveRoomPhotos(allRoomPhotos);
 
     // Update knowledge database record if category exists
     const records = loadKnowledgeBase();
-    let target = records.find((r) => r.category === safeCat);
+    let target = records.find((r) => normalizeRoomCategory(r.category) === normCat);
 
     if (target) {
       if (photoType === 'incorrect') {
@@ -1530,11 +1768,25 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
       saveKnowledgeBase(records);
     }
 
+    // Sync guides.json
+    const guides = loadGuides();
+    const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
+    if (g) {
+      if (photoType === 'incorrect') {
+        g.incorrectPhotoUrl = permanentUrl;
+      } else {
+        g.photoUrl = permanentUrl;
+      }
+      g.photos = allRoomPhotos[normCat];
+      g.updatedAt = now;
+      saveGuides(guides);
+    }
+
     res.json({
       success: true,
       message: 'Reference photo permanently saved on server!',
       photoUrl: permanentUrl,
-      photos: allRoomPhotos[safeCat],
+      photos: allRoomPhotos[normCat],
     });
   } catch (err: any) {
     console.error('Error uploading reference photo:', err);
@@ -1542,17 +1794,16 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
   }
 });
 
-// DELETE ROOM REFERENCE PHOTO (Admin only)
-app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
+// Helper for deleting all photos in a room category
+function executeDeleteAllRoomPhotos(category: string, photoType: string, req: express.Request, res: express.Response) {
   try {
-    const { category } = req.params;
-    const { photoType = 'reference' } = req.body || req.query || {};
+    const normCat = normalizeRoomCategory(category);
     const now = new Date().toISOString();
 
     // 1. Unlink physical files and clean room_photos gallery
     const allRoomPhotos = loadRoomPhotos();
-    if (allRoomPhotos[category]) {
-      allRoomPhotos[category] = allRoomPhotos[category].filter((p: any) => {
+    if (allRoomPhotos[normCat]) {
+      allRoomPhotos[normCat] = allRoomPhotos[normCat].filter((p: any) => {
         const matchesType = photoType === 'incorrect' ? p.photoType === 'incorrect' : p.photoType !== 'incorrect';
         if (matchesType) {
           if (p.url) {
@@ -1562,20 +1813,20 @@ app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
         }
         return true;
       });
-      if (allRoomPhotos[category].length > 0 && !allRoomPhotos[category].some((p) => p.isPrimary)) {
-        allRoomPhotos[category][0].isPrimary = true;
+      if (allRoomPhotos[normCat].length > 0 && !allRoomPhotos[normCat].some((p) => p.isPrimary)) {
+        allRoomPhotos[normCat][0].isPrimary = true;
       }
       saveRoomPhotos(allRoomPhotos);
     }
 
     // 2. Update knowledge base
     const records = loadKnowledgeBase();
-    const target = records.find((r) => r.category === category);
+    const target = records.find((r) => normalizeRoomCategory(r.category) === normCat);
+    const remainingPrimary = allRoomPhotos[normCat]?.find((p) => p.isPrimary);
     if (target) {
       if (photoType === 'incorrect') {
         target.incorrectPhotoUrl = undefined;
       } else {
-        const remainingPrimary = allRoomPhotos[category]?.find((p) => p.isPrimary);
         target.referencePhotoUrl = remainingPrimary ? remainingPrimary.url : '';
       }
       target.updatedAt = now;
@@ -1583,16 +1834,15 @@ app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
     }
 
     // 3. Update guides.json
-    const remainingPrimary = allRoomPhotos[category]?.find((p) => p.isPrimary);
     const guides = loadGuides();
-    const g = guides.find((item: any) => item.category === category);
+    const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
     if (g) {
       if (photoType === 'incorrect') {
         g.incorrectPhotoUrl = undefined;
       } else {
         g.photoUrl = remainingPrimary ? remainingPrimary.url : '';
       }
-      g.photos = allRoomPhotos[category] || [];
+      g.photos = allRoomPhotos[normCat] || [];
       g.updatedAt = now;
       saveGuides(guides);
     }
@@ -1602,7 +1852,7 @@ app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
       const tasks = loadTasks();
       let tasksChanged = false;
       tasks.forEach((t: any) => {
-        if (t.roomCategory === category) {
+        if (normalizeRoomCategory(t.roomCategory) === normCat) {
           t.referencePhotoUrl = remainingPrimary ? remainingPrimary.url : '';
           tasksChanged = true;
         }
@@ -1612,13 +1862,25 @@ app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
 
     res.json({
       success: true,
-      message: 'Reference photo deleted successfully from disk and room gallery',
-      photos: allRoomPhotos[category] || [],
+      message: 'Room photos deleted successfully from disk and room gallery',
+      photos: allRoomPhotos[normCat] || [],
     });
   } catch (err: any) {
     console.error('Error deleting room photos:', err);
     res.status(500).json({ error: err.message || 'Failed to delete photo' });
   }
+}
+
+// DELETE ROOM REFERENCE PHOTO (Admin only)
+app.delete('/api/photos/room/:category', requireAdmin, (req, res) => {
+  const { photoType = 'reference' } = req.body || req.query || {};
+  executeDeleteAllRoomPhotos(req.params.category, photoType, req, res);
+});
+
+// POST alias for room deletion
+app.post('/api/photos/room/:category/delete-all', requireAdmin, (req, res) => {
+  const { photoType = 'reference' } = req.body || req.query || {};
+  executeDeleteAllRoomPhotos(req.params.category, photoType, req, res);
 });
 
 // GET & UPDATE VISUAL GUIDES

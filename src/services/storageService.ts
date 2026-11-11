@@ -18,7 +18,7 @@ const STORAGE_KEYS = {
 };
 
 // Real-time broadcast helper
-function broadcastUpdate(type: 'guides' | 'tasks' | 'users' | 'all') {
+function broadcastUpdate(type: 'guides' | 'tasks' | 'users' | 'photos' | 'all') {
   if (typeof window !== 'undefined') {
     try {
       window.dispatchEvent(new CustomEvent('office_data_updated', { detail: { type } }));
@@ -124,43 +124,81 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Canonical Room Category Normalizer
+export function normalizeRoomCategory(cat: string): string {
+  if (!cat) return 'general';
+  return cat
+    .toLowerCase()
+    .trim()
+    .replace(/^guide[-_]/, '')
+    .replace(/-/g, '_');
+}
+
 // In-memory room photo & analysis caches
 let roomPhotosCache: Record<string, RoomPhotoItem[]> = {};
 let roomAnalysesCache: Record<string, AIRoomAnalysis> = {};
+let isRoomPhotosInitialized = false;
 
 export const StorageService = {
   // Initialization function to ensure preloaded photo sync from server backend and IndexedDB
   async init(): Promise<void> {
     try {
-      // 1. Fetch server-persisted reference photos and approved knowledge
-      const knowledge = await AITrainingService.getApprovedKnowledge();
-      if (Array.isArray(knowledge) && knowledge.length > 0) {
-        knowledge.forEach((k) => {
-          if (k.referencePhotoUrl) {
-            photoMemoryCache[`guide_photo_guide-${k.category}`] = k.referencePhotoUrl;
-            photoMemoryCache[`guide_photo_${k.category}`] = k.referencePhotoUrl;
+      // 1. Fetch server-persisted room photos galleries & AI analyses FIRST
+      const { photosByRoom, analysesByRoom } = await AITrainingService.getAllRoomsPhotos();
+      if (photosByRoom && typeof photosByRoom === 'object') {
+        Object.entries(photosByRoom).forEach(([cat, list]) => {
+          const normCat = normalizeRoomCategory(cat);
+          const safeList = Array.isArray(list) ? list : [];
+          roomPhotosCache[normCat] = safeList;
+          roomPhotosCache[cat] = safeList;
+
+          if (safeList.length > 0) {
+            const primary = safeList.find((p) => p.isPrimary) || safeList[0];
+            if (primary && primary.url) {
+              photoMemoryCache[`guide_photo_guide-${normCat}`] = primary.url;
+              photoMemoryCache[`guide_photo_${normCat}`] = primary.url;
+              photoMemoryCache[`guide_photo_guide-${cat}`] = primary.url;
+              photoMemoryCache[`guide_photo_${cat}`] = primary.url;
+            }
+          } else {
+            // Explicitly clear memory cache and IDB for rooms with no photos
+            delete photoMemoryCache[`guide_photo_guide-${normCat}`];
+            delete photoMemoryCache[`guide_photo_${normCat}`];
+            delete photoMemoryCache[`guide_photo_guide-${cat}`];
+            delete photoMemoryCache[`guide_photo_${cat}`];
+            PhotoStorageDB.deletePhoto(`guide_photo_guide-${normCat}`);
+            PhotoStorageDB.deletePhoto(`guide_photo_${normCat}`);
+            PhotoStorageDB.deletePhoto(`guide_photo_guide-${cat}`);
+            PhotoStorageDB.deletePhoto(`guide_photo_${cat}`);
           }
-          if (k.incorrectPhotoUrl) {
-            photoMemoryCache[`guide_inc_guide-${k.category}`] = k.incorrectPhotoUrl;
-            photoMemoryCache[`guide_inc_${k.category}`] = k.incorrectPhotoUrl;
-          }
+        });
+        isRoomPhotosInitialized = true;
+      }
+
+      if (analysesByRoom && Object.keys(analysesByRoom).length > 0) {
+        Object.entries(analysesByRoom).forEach(([cat, analysis]) => {
+          const normCat = normalizeRoomCategory(cat);
+          roomAnalysesCache[normCat] = analysis;
+          roomAnalysesCache[cat] = analysis;
         });
       }
 
-      // 2. Fetch server-persisted room photos galleries & AI analyses
-      const { photosByRoom, analysesByRoom } = await AITrainingService.getAllRoomsPhotos();
-      if (photosByRoom && Object.keys(photosByRoom).length > 0) {
-        roomPhotosCache = { ...photosByRoom };
-        Object.entries(photosByRoom).forEach(([cat, list]) => {
-          const primary = list.find((p) => p.isPrimary) || list[0];
-          if (primary && primary.url) {
-            photoMemoryCache[`guide_photo_guide-${cat}`] = primary.url;
-            photoMemoryCache[`guide_photo_${cat}`] = primary.url;
+      // 2. Fetch server-persisted reference photos and approved knowledge
+      const knowledge = await AITrainingService.getApprovedKnowledge();
+      if (Array.isArray(knowledge) && knowledge.length > 0) {
+        knowledge.forEach((k) => {
+          const normCat = normalizeRoomCategory(k.category);
+          // Only populate memory cache if room gallery on server actually has photos!
+          const gallery = roomPhotosCache[normCat] || roomPhotosCache[k.category];
+          if (gallery && gallery.length > 0 && k.referencePhotoUrl) {
+            photoMemoryCache[`guide_photo_guide-${normCat}`] = k.referencePhotoUrl;
+            photoMemoryCache[`guide_photo_${normCat}`] = k.referencePhotoUrl;
+          }
+          if (k.incorrectPhotoUrl) {
+            photoMemoryCache[`guide_inc_guide-${normCat}`] = k.incorrectPhotoUrl;
+            photoMemoryCache[`guide_inc_${normCat}`] = k.incorrectPhotoUrl;
           }
         });
-      }
-      if (analysesByRoom && Object.keys(analysesByRoom).length > 0) {
-        roomAnalysesCache = { ...analysesByRoom };
       }
 
       // 3. Fetch server-persisted tasks (including proofPhotos with 40-day retention)
@@ -186,8 +224,21 @@ export const StorageService = {
       console.warn('Backend knowledge & photos sync notice:', e);
     }
 
-    const photos = await PhotoStorageDB.getAllPhotos();
-    Object.assign(photoMemoryCache, photos);
+    // Merge IndexedDB photos, but DO NOT resurrect deleted photos for empty galleries
+    try {
+      const photos = await PhotoStorageDB.getAllPhotos();
+      Object.keys(photos).forEach((key) => {
+        // If key is guide_photo_ and room is explicitly empty in server cache, skip it
+        for (const [roomCat, list] of Object.entries(roomPhotosCache)) {
+          if (list.length === 0 && (key === `guide_photo_${roomCat}` || key === `guide_photo_guide-${roomCat}`)) {
+            PhotoStorageDB.deletePhoto(key);
+            return;
+          }
+        }
+        photoMemoryCache[key] = photos[key];
+      });
+    } catch {}
+
     broadcastUpdate('all');
   },
 
@@ -339,31 +390,33 @@ export const StorageService = {
 
     // Overlay custom uploaded photos from PhotoStorageDB memory cache and server room galleries
     return guides.map((guide) => {
-      const customPhoto = photoMemoryCache[`guide_photo_${guide.id}`] || photoMemoryCache[`guide_photo_${guide.category}`];
-      const customIncPhoto = photoMemoryCache[`guide_inc_${guide.id}`] || photoMemoryCache[`guide_inc_${guide.category}`];
+      const normCat = normalizeRoomCategory(guide.category);
+      const customPhoto = photoMemoryCache[`guide_photo_${guide.id}`] || photoMemoryCache[`guide_photo_${normCat}`] || photoMemoryCache[`guide_photo_${guide.category}`];
+      const customIncPhoto = photoMemoryCache[`guide_inc_${guide.id}`] || photoMemoryCache[`guide_inc_${normCat}`] || photoMemoryCache[`guide_inc_${guide.category}`];
 
-      // Resolve lightweight IDB pointer if present
-      let finalPhoto = guide.photoUrl;
-      if (finalPhoto && finalPhoto.startsWith('idb:guide_photo_')) {
-        const idbKey = finalPhoto.replace('idb:', '');
-        finalPhoto = photoMemoryCache[idbKey] || '';
-      }
-
-      let finalIncPhoto = guide.incorrectPhotoUrl;
-      if (finalIncPhoto && finalIncPhoto.startsWith('idb:guide_inc_')) {
-        const idbKey = finalIncPhoto.replace('idb:', '');
-        finalIncPhoto = photoMemoryCache[idbKey] || undefined;
-      }
-
-      const roomGallery = roomPhotosCache[guide.category] || guide.photos || [];
+      // Check roomPhotosCache
+      const hasLoadedGallery = isRoomPhotosInitialized || normCat in roomPhotosCache || guide.category in roomPhotosCache;
+      const roomGallery = (normCat in roomPhotosCache ? roomPhotosCache[normCat] : (guide.category in roomPhotosCache ? roomPhotosCache[guide.category] : guide.photos)) || [];
       const primaryItem = roomGallery.find((p) => p.isPrimary) || roomGallery[0];
       const primaryUrl = primaryItem ? primaryItem.url : '';
-      const roomAnalysis = roomAnalysesCache[guide.category] || guide.aiRoomAnalysis;
+      const roomAnalysis = roomAnalysesCache[normCat] || roomAnalysesCache[guide.category] || guide.aiRoomAnalysis;
+
+      let resolvedPhotoUrl = '';
+      if (roomGallery.length > 0) {
+        resolvedPhotoUrl = primaryUrl || (customPhoto !== undefined ? customPhoto : '');
+      } else if (hasLoadedGallery) {
+        // Room photos have been fetched and this room has 0 photos.
+        // NEVER restore deleted default photos!
+        resolvedPhotoUrl = '';
+      } else {
+        // Only if not yet loaded from server, fall back
+        resolvedPhotoUrl = customPhoto || guide.photoUrl || '';
+      }
 
       return {
         ...guide,
-        photoUrl: primaryUrl || (roomGallery.length > 0 ? (customPhoto !== undefined ? customPhoto : finalPhoto) : ''),
-        incorrectPhotoUrl: customIncPhoto !== undefined ? customIncPhoto : finalIncPhoto,
+        photoUrl: resolvedPhotoUrl,
+        incorrectPhotoUrl: customIncPhoto !== undefined ? customIncPhoto : guide.incorrectPhotoUrl,
         photos: roomGallery,
         aiRoomAnalysis: roomAnalysis,
       };
@@ -371,7 +424,10 @@ export const StorageService = {
   },
 
   getRoomPhotos(category: string): RoomPhotoItem[] {
-    return roomPhotosCache[category] || [];
+    const normCat = normalizeRoomCategory(category);
+    if (normCat in roomPhotosCache) return roomPhotosCache[normCat];
+    if (category in roomPhotosCache) return roomPhotosCache[category];
+    return [];
   },
 
   getAllRoomPhotos(): Record<string, RoomPhotoItem[]> {
@@ -379,16 +435,26 @@ export const StorageService = {
   },
 
   setRoomPhotos(category: string, photos: RoomPhotoItem[]): void {
-    roomPhotosCache[category] = photos;
-    const primary = photos.find((p) => p.isPrimary) || photos[0];
+    const normCat = normalizeRoomCategory(category);
+    const safePhotos = Array.isArray(photos) ? photos : [];
+    roomPhotosCache[normCat] = safePhotos;
+    roomPhotosCache[category] = safePhotos;
+
+    const primary = safePhotos.find((p) => p.isPrimary) || safePhotos[0];
     if (primary && primary.url) {
+      photoMemoryCache[`guide_photo_guide-${normCat}`] = primary.url;
+      photoMemoryCache[`guide_photo_${normCat}`] = primary.url;
       photoMemoryCache[`guide_photo_guide-${category}`] = primary.url;
       photoMemoryCache[`guide_photo_${category}`] = primary.url;
-      PhotoStorageDB.savePhoto(`guide_photo_guide-${category}`, primary.url);
-      PhotoStorageDB.savePhoto(`guide_photo_${category}`, primary.url);
+      PhotoStorageDB.savePhoto(`guide_photo_guide-${normCat}`, primary.url);
+      PhotoStorageDB.savePhoto(`guide_photo_${normCat}`, primary.url);
     } else {
+      delete photoMemoryCache[`guide_photo_guide-${normCat}`];
+      delete photoMemoryCache[`guide_photo_${normCat}`];
       delete photoMemoryCache[`guide_photo_guide-${category}`];
       delete photoMemoryCache[`guide_photo_${category}`];
+      PhotoStorageDB.deletePhoto(`guide_photo_guide-${normCat}`);
+      PhotoStorageDB.deletePhoto(`guide_photo_${normCat}`);
       PhotoStorageDB.deletePhoto(`guide_photo_guide-${category}`);
       PhotoStorageDB.deletePhoto(`guide_photo_${category}`);
     }
@@ -396,23 +462,27 @@ export const StorageService = {
     // Immediately update guide in local storage
     try {
       const data = localStorage.getItem(STORAGE_KEYS.VISUAL_GUIDES);
+      let guides: VisualGuide[];
       if (data) {
-        const guides: VisualGuide[] = JSON.parse(data);
-        const idx = guides.findIndex((g) => g.category === category || g.id === `guide-${category}`);
-        if (idx !== -1) {
-          guides[idx] = {
-            ...guides[idx],
-            photos,
-            photoUrl: primary ? primary.url : '',
-          };
-          localStorage.setItem(STORAGE_KEYS.VISUAL_GUIDES, JSON.stringify(guides));
-        }
+        guides = JSON.parse(data);
+      } else {
+        guides = [...DEFAULT_VISUAL_GUIDES];
+      }
+      const idx = guides.findIndex((g) => normalizeRoomCategory(g.category) === normCat || g.id === `guide-${normCat}` || g.category === category);
+      if (idx !== -1) {
+        guides[idx] = {
+          ...guides[idx],
+          photos: safePhotos,
+          photoUrl: primary ? primary.url : '',
+        };
+        localStorage.setItem(STORAGE_KEYS.VISUAL_GUIDES, JSON.stringify(guides));
       }
     } catch (e) {
       console.warn('Notice saving local guides in setRoomPhotos:', e);
     }
 
     broadcastUpdate('guides');
+    broadcastUpdate('photos');
   },
 
   getRoomAnalysis(category: string): AIRoomAnalysis | null {
@@ -493,31 +563,19 @@ export const StorageService = {
 
   // Real-time photo delete
   deleteRoomReferencePhoto(roomId: string): void {
-    const rawCategory = roomId.replace(/^guide-/, '');
-    delete photoMemoryCache[`guide_photo_${roomId}`];
-    delete photoMemoryCache[`guide_photo_${rawCategory}`];
-    delete photoMemoryCache[`guide_photo_guide-${rawCategory}`];
-    PhotoStorageDB.deletePhoto(`guide_photo_${roomId}`);
-    PhotoStorageDB.deletePhoto(`guide_photo_${rawCategory}`);
-    PhotoStorageDB.deletePhoto(`guide_photo_guide-${rawCategory}`);
+    const normCat = normalizeRoomCategory(roomId);
+    this.setRoomPhotos(normCat, []);
+  },
 
-    if (roomPhotosCache[rawCategory]) {
-      roomPhotosCache[rawCategory] = [];
-    }
-
-    const guides = this.getVisualGuides();
-    const idx = guides.findIndex((g) => g.id === roomId || g.category === rawCategory);
-    if (idx !== -1) {
-      guides[idx] = {
-        ...guides[idx],
-        photoUrl: '',
-        photos: [],
-        updatedAt: new Date().toISOString(),
-        updatedBy: 'Admin (Deleted)',
-      };
-      this.saveVisualGuides(guides);
-    }
-    broadcastUpdate('guides');
+  deleteRoomPhotoItem(category: string, photoId: string, photoUrl?: string): void {
+    const normCat = normalizeRoomCategory(category);
+    const existing = this.getRoomPhotos(normCat);
+    const updated = existing.filter((p) => {
+      if (p.id === photoId) return false;
+      if (photoUrl && p.url === photoUrl) return false;
+      return true;
+    });
+    this.setRoomPhotos(normCat, updated);
   },
 
   // Real-time incorrect photo upload / replace / delete

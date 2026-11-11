@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { VisualGuide, Language, User, RoomPhotoItem, AIRoomAnalysis } from '../types';
 import { VoiceButton } from './VoiceButton';
-import { StorageService, fileToDataUrl } from '../services/storageService';
+import { StorageService, fileToDataUrl, normalizeRoomCategory } from '../services/storageService';
 import { AITrainingService } from '../services/aiTrainingService';
 import { TaskCompleteModal } from './TaskCompleteModal';
 import {
@@ -55,6 +55,8 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
   // Interactive Lightbox State
   const [lightboxRoomCategory, setLightboxRoomCategory] = useState<string | null>(null);
   const [lightboxPhotoIndex, setLightboxPhotoIndex] = useState<number>(0);
+  const [lightboxPhotos, setLightboxPhotos] = useState<RoomPhotoItem[]>([]);
+  const [, setRefreshTick] = useState(0);
   
   // Direct Multi-file upload for Admin from Training Section
   const [uploadingForGuideId, setUploadingForGuideId] = useState<string | null>(null);
@@ -65,7 +67,60 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
   const [proofRoomModal, setProofRoomModal] = useState<VisualGuide | null>(null);
 
   const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const lightboxReplaceInputRef = useRef<HTMLInputElement>(null);
   const activeGuideRef = useRef<string | null>(null);
+
+  const [isReplacingLightbox, setIsReplacingLightbox] = useState(false);
+
+  const handleStartLightboxReplace = () => {
+    if (lightboxReplaceInputRef.current) {
+      lightboxReplaceInputRef.current.value = '';
+      lightboxReplaceInputRef.current.click();
+    }
+  };
+
+  const handleConfirmLightboxReplace = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !lightboxRoomCategory || !currentLightboxPhoto) return;
+
+    setIsReplacingLightbox(true);
+    try {
+      const base64 = await fileToDataUrl(file);
+      const adminUser = currentUser?.role === 'admin'
+        ? currentUser
+        : StorageService.getUsers().find((u) => u.role === 'admin');
+
+      const res = await AITrainingService.replaceRoomPhotoItem({
+        category: lightboxRoomCategory,
+        photoId: currentLightboxPhoto.id,
+        photoBase64: base64,
+        photoUrl: currentLightboxPhoto.url,
+        photoIndex: lightboxPhotoIndex,
+        user: adminUser,
+      });
+
+      if (res.success) {
+        const updated = res.photos || [];
+        StorageService.setRoomPhotos(lightboxRoomCategory, updated);
+        setLightboxPhotos(updated);
+        setRefreshTick((t) => t + 1);
+
+        setQuickSuccessMsg({
+          id: lightboxRoomCategory,
+          text: language === 'hi'
+            ? 'संदर्भ फोटो सफलतापूर्वक अपडेट/बदल दी गई है!'
+            : 'Reference photo successfully updated and replaced!',
+        });
+        setTimeout(() => setQuickSuccessMsg(null), 3500);
+
+        onRefreshData?.();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to replace photo');
+    } finally {
+      setIsReplacingLightbox(false);
+    }
+  };
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -74,13 +129,24 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
 
   // Helper to get room gallery photos
   const getRoomPhotosForGuide = (guide: VisualGuide): RoomPhotoItem[] => {
-    if (guide.photos && guide.photos.length > 0) return guide.photos;
+    // 1. Check loaded room photos in StorageService
     const stored = StorageService.getRoomPhotos(guide.category);
-    if (stored && stored.length > 0) return stored;
-    if (guide.photoUrl) {
+    if (stored !== undefined && Array.isArray(stored)) {
+      if (stored.length > 0) return stored;
+      // If stored is explicitly empty, user has deleted all photos: DO NOT restore default photos!
+      return [];
+    }
+
+    // 2. Check guide.photos
+    if (guide.photos && Array.isArray(guide.photos)) {
+      return guide.photos;
+    }
+
+    // 3. Fallback only if photoUrl is present and non-empty
+    if (guide.photoUrl && guide.photoUrl.trim() !== '') {
       return [
         {
-          id: `photo_${guide.category}_default`,
+          id: `photo_${guide.category}_1`,
           url: guide.photoUrl,
           captionHi: guide.photoCaptionHi,
           captionEn: guide.photoCaptionEn,
@@ -101,12 +167,17 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
 
   // Open Lightbox for a specific room and photo index
   const openLightbox = (category: string, index = 0) => {
+    const norm = normalizeRoomCategory(category);
+    const targetGuide = guides.find((g) => normalizeRoomCategory(g.category) === norm || g.category === category);
+    const photos = targetGuide ? getRoomPhotosForGuide(targetGuide) : StorageService.getRoomPhotos(category);
     setLightboxRoomCategory(category);
-    setLightboxPhotoIndex(index);
+    setLightboxPhotos(photos);
+    setLightboxPhotoIndex(photos.length > 0 ? Math.max(0, Math.min(index, photos.length - 1)) : 0);
   };
 
   const closeLightbox = () => {
     setLightboxRoomCategory(null);
+    setLightboxPhotos([]);
     setLightboxPhotoIndex(0);
   };
 
@@ -199,26 +270,56 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
   };
 
   // Admin deletes single photo
-  const handleDeletePhotoItem = async (category: string, photoId: string, guideId?: string) => {
-    if (!window.confirm(language === 'hi' ? 'क्या आप इस फोटो को गैलरी से हमेशा के लिए हटाना चाहते हैं?' : 'Are you sure you want to permanently delete this photo from the room gallery?')) return;
+  const handleDeletePhotoItem = async (category: string, photoId: string, guideId?: string, photoUrl?: string) => {
+    // Resolve admin credentials
+    const adminUser = currentUser?.role === 'admin'
+      ? currentUser
+      : StorageService.getUsers().find((u) => u.role === 'admin');
+
+    if (!adminUser) {
+      alert(language === 'hi' ? 'केवल व्यवस्थापक (Admin) ही संदर्भ फोटो हटा सकते हैं।' : 'Only Admin can delete reference photos.');
+      return;
+    }
+
+    const confirmMsg =
+      language === 'hi'
+        ? 'क्या आप इस संदर्भ फोटो को सर्वर और डेटाबेस से हमेशा के लिए हटाना चाहते हैं?'
+        : 'Are you sure you want to permanently delete this reference photo from cloud storage and database?';
+
+    if (!window.confirm(confirmMsg)) return;
+
     try {
-      const res = await AITrainingService.deleteRoomPhotoItem(category, photoId, currentUser);
+      const activeIdx = lightboxPhotoIndex;
+      const res = await AITrainingService.deleteRoomPhotoItem(category, photoId, adminUser, photoUrl, activeIdx);
       if (res.success) {
-        StorageService.setRoomPhotos(category, res.photos);
-        if (guideId) {
-          setQuickSuccessMsg({
-            id: guideId,
-            text: language === 'hi' ? 'फोटो हटा दिया गया है' : 'Photo deleted',
-          });
-          setTimeout(() => setQuickSuccessMsg(null), 3000);
-        }
-        if (lightboxRoomCategory === category) {
-          if (res.photos.length === 0) {
+        const updatedPhotos = res.photos || [];
+        // Immediately persist to cache & localStorage
+        StorageService.setRoomPhotos(category, updatedPhotos);
+
+        // Advance viewer or close if last photo deleted
+        if (lightboxRoomCategory && normalizeRoomCategory(lightboxRoomCategory) === normalizeRoomCategory(category)) {
+          if (updatedPhotos.length === 0) {
+            // Last photo deleted -> close viewer and show empty state
             closeLightbox();
           } else {
-            setLightboxPhotoIndex((prev) => Math.min(prev, res.photos.length - 1));
+            // Multiple photos existed -> advance to next available photo
+            setLightboxPhotos(updatedPhotos);
+            const nextIdx = Math.min(activeIdx, updatedPhotos.length - 1);
+            setLightboxPhotoIndex(nextIdx);
           }
         }
+
+        // Trigger local re-render immediately
+        setRefreshTick((t) => t + 1);
+
+        setQuickSuccessMsg({
+          id: guideId || category,
+          text: language === 'hi'
+            ? 'संदर्भ फोटो सर्वर और डेटाबेस से सफलतापूर्वक हटा दिया गया है!'
+            : 'Reference photo permanently deleted from cloud storage and database!',
+        });
+        setTimeout(() => setQuickSuccessMsg(null), 3000);
+
         onRefreshData?.();
       }
     } catch (err: any) {
@@ -302,14 +403,23 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
   };
 
   // Lightbox active photo list
-  const activeLightboxPhotos = lightboxRoomCategory
-    ? StorageService.getRoomPhotos(lightboxRoomCategory) || []
-    : [];
+  const activeLightboxPhotos = lightboxPhotos.length > 0
+    ? lightboxPhotos
+    : (lightboxRoomCategory ? StorageService.getRoomPhotos(lightboxRoomCategory) || [] : []);
   const currentLightboxPhoto = activeLightboxPhotos[lightboxPhotoIndex] || activeLightboxPhotos[0];
 
   return (
     <div className="space-y-6 pb-20">
       
+      {/* Hidden file input for replacing single photo in lightbox */}
+      <input
+        ref={lightboxReplaceInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleConfirmLightboxReplace}
+      />
+
       {/* Hidden multiple file input for Admin multi-photo upload */}
       <input
         ref={multiFileInputRef}
@@ -448,7 +558,19 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                         />
 
                         {/* Top Controls: Zoom & Gallery Count */}
-                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+                          {isAdmin && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeletePhotoItem(guide.category, primaryPhoto.id, guide.id, primaryPhoto.url);
+                              }}
+                              className="p-2 rounded-xl bg-black/60 hover:bg-rose-600 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                              title={language === 'hi' ? 'यह संदर्भ फोटो हटाएं' : 'Delete reference photo'}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => openLightbox(guide.category, 0)}
                             className="p-2 rounded-xl bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
@@ -767,9 +889,9 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                               <span className="text-[10px] font-bold text-emerald-700">✓ Official</span>
                             )}
                             <button
-                              onClick={() => handleDeletePhotoItem(currentDetailedGuide.category, photo.id, currentDetailedGuide.id)}
-                              className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                              title="Delete photo"
+                              onClick={() => handleDeletePhotoItem(currentDetailedGuide.category, photo.id, currentDetailedGuide.id, photo.url)}
+                              className="text-rose-600 hover:text-rose-800 p-1.5 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                              title={language === 'hi' ? 'यह संदर्भ फोटो हटाएं' : 'Delete reference photo'}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1095,15 +1217,26 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {isAdmin && lightboxRoomCategory && (
-                  <button
-                    onClick={() => handleDeletePhotoItem(lightboxRoomCategory, currentLightboxPhoto.id)}
-                    className="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-                    title="Delete this photo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>{language === 'hi' ? 'फोटो हटाएं' : 'Delete Photo'}</span>
-                  </button>
+                {lightboxRoomCategory && (
+                  <>
+                    <button
+                      onClick={handleStartLightboxReplace}
+                      disabled={isReplacingLightbox}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600/90 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs disabled:opacity-60"
+                      title={language === 'hi' ? 'नई फोटो से अपडेट करें (Update/Replace)' : 'Update or replace reference photo'}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isReplacingLightbox ? 'animate-spin' : ''}`} />
+                      <span>{language === 'hi' ? 'फोटो अपडेट करें' : 'Update Photo'}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeletePhotoItem(lightboxRoomCategory, currentLightboxPhoto.id, undefined, currentLightboxPhoto.url)}
+                      className="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                      title={language === 'hi' ? 'यह संदर्भ फोटो हटाएं' : 'Delete reference photo'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{language === 'hi' ? 'फोटो हटाएं' : 'Delete Photo'}</span>
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={closeLightbox}
