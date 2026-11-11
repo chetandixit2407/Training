@@ -161,15 +161,21 @@ export const StorageService = {
               photoMemoryCache[`guide_photo_${cat}`] = primary.url;
             }
           } else {
-            // Explicitly clear memory cache and IDB for rooms with no photos
-            delete photoMemoryCache[`guide_photo_guide-${normCat}`];
-            delete photoMemoryCache[`guide_photo_${normCat}`];
-            delete photoMemoryCache[`guide_photo_guide-${cat}`];
-            delete photoMemoryCache[`guide_photo_${cat}`];
-            PhotoStorageDB.deletePhoto(`guide_photo_guide-${normCat}`);
-            PhotoStorageDB.deletePhoto(`guide_photo_${normCat}`);
-            PhotoStorageDB.deletePhoto(`guide_photo_guide-${cat}`);
-            PhotoStorageDB.deletePhoto(`guide_photo_${cat}`);
+            // Explicitly clear memory cache and IDB across all key variations for rooms with no photos
+            const norm = normalizeRoomCategory(cat);
+            const hyphen = norm.replace(/_/g, '-');
+            const keysToPurge = [
+              `guide_photo_guide-${norm}`,
+              `guide_photo_${norm}`,
+              `guide_photo_guide-${hyphen}`,
+              `guide_photo_${hyphen}`,
+              `guide_photo_guide-${cat}`,
+              `guide_photo_${cat}`,
+            ];
+            keysToPurge.forEach((k) => {
+              delete photoMemoryCache[k];
+              PhotoStorageDB.deletePhoto(k);
+            });
           }
         });
         isRoomPhotosInitialized = true;
@@ -228,15 +234,54 @@ export const StorageService = {
     try {
       const photos = await PhotoStorageDB.getAllPhotos();
       Object.keys(photos).forEach((key) => {
-        // If key is guide_photo_ and room is explicitly empty in server cache, skip it
+        // If key relates to a room that is empty on server, purge from IDB and do not resurrect
         for (const [roomCat, list] of Object.entries(roomPhotosCache)) {
-          if (list.length === 0 && (key === `guide_photo_${roomCat}` || key === `guide_photo_guide-${roomCat}`)) {
-            PhotoStorageDB.deletePhoto(key);
-            return;
+          if (list.length === 0) {
+            const normRoom = normalizeRoomCategory(roomCat);
+            const roomHyphen = normRoom.replace(/_/g, '-');
+            if (
+              key === `guide_photo_${normRoom}` ||
+              key === `guide_photo_guide-${normRoom}` ||
+              key === `guide_photo_${roomHyphen}` ||
+              key === `guide_photo_guide-${roomHyphen}` ||
+              key === `guide_photo_${roomCat}` ||
+              key === `guide_photo_guide-${roomCat}`
+            ) {
+              PhotoStorageDB.deletePhoto(key);
+              delete photoMemoryCache[key];
+              return;
+            }
           }
         }
         photoMemoryCache[key] = photos[key];
       });
+    } catch {}
+
+    // Ensure localStorage cached guides have empty photoUrl when room galleries have no photos
+    try {
+      localStorage.removeItem('office_train_guides_v3');
+      const stored = localStorage.getItem(STORAGE_KEYS.VISUAL_GUIDES);
+      if (stored) {
+        const parsed: VisualGuide[] = JSON.parse(stored);
+        let modified = false;
+        parsed.forEach((g) => {
+          const norm = normalizeRoomCategory(g.category);
+          const gallery = roomPhotosCache[norm] || roomPhotosCache[g.category] || [];
+          if (gallery.length === 0 && g.photoUrl) {
+            g.photoUrl = '';
+            modified = true;
+          } else if (gallery.length > 0) {
+            const primary = gallery.find((p) => p.isPrimary) || gallery[0];
+            if (primary && g.photoUrl !== primary.url) {
+              g.photoUrl = primary.url;
+              modified = true;
+            }
+          }
+        });
+        if (modified) {
+          localStorage.setItem(STORAGE_KEYS.VISUAL_GUIDES, JSON.stringify(parsed));
+        }
+      }
     } catch {}
 
     broadcastUpdate('all');
@@ -357,29 +402,7 @@ export const StorageService = {
       if (data) {
         guides = JSON.parse(data);
       } else {
-        // Try migrating from v3 if present
-        let initialGuides = [...DEFAULT_VISUAL_GUIDES];
-        try {
-          const oldV3 = localStorage.getItem('office_train_guides_v3');
-          if (oldV3) {
-            const parsedOld: VisualGuide[] = JSON.parse(oldV3);
-            const photoMap = new Map<string, string>();
-            parsedOld.forEach((og) => {
-              if (og.photoUrl && og.photoUrl !== '') {
-                photoMap.set(og.id, og.photoUrl);
-              }
-            });
-            initialGuides = initialGuides.map((g) => {
-              if (photoMap.has(g.id)) {
-                return { ...g, photoUrl: photoMap.get(g.id)! };
-              }
-              return g;
-            });
-          }
-        } catch {
-          // ignore
-        }
-        guides = initialGuides;
+        guides = [...DEFAULT_VISUAL_GUIDES];
       }
     } catch {
       guides = [...DEFAULT_VISUAL_GUIDES];
@@ -436,27 +459,32 @@ export const StorageService = {
 
   setRoomPhotos(category: string, photos: RoomPhotoItem[]): void {
     const normCat = normalizeRoomCategory(category);
+    const catHyphen = normCat.replace(/_/g, '-');
     const safePhotos = Array.isArray(photos) ? photos : [];
     roomPhotosCache[normCat] = safePhotos;
     roomPhotosCache[category] = safePhotos;
+    roomPhotosCache[catHyphen] = safePhotos;
+
+    const keysToManage = [
+      `guide_photo_guide-${normCat}`,
+      `guide_photo_${normCat}`,
+      `guide_photo_guide-${catHyphen}`,
+      `guide_photo_${catHyphen}`,
+      `guide_photo_guide-${category}`,
+      `guide_photo_${category}`,
+    ];
 
     const primary = safePhotos.find((p) => p.isPrimary) || safePhotos[0];
     if (primary && primary.url) {
-      photoMemoryCache[`guide_photo_guide-${normCat}`] = primary.url;
-      photoMemoryCache[`guide_photo_${normCat}`] = primary.url;
-      photoMemoryCache[`guide_photo_guide-${category}`] = primary.url;
-      photoMemoryCache[`guide_photo_${category}`] = primary.url;
-      PhotoStorageDB.savePhoto(`guide_photo_guide-${normCat}`, primary.url);
-      PhotoStorageDB.savePhoto(`guide_photo_${normCat}`, primary.url);
+      keysToManage.forEach((k) => {
+        photoMemoryCache[k] = primary.url;
+        PhotoStorageDB.savePhoto(k, primary.url);
+      });
     } else {
-      delete photoMemoryCache[`guide_photo_guide-${normCat}`];
-      delete photoMemoryCache[`guide_photo_${normCat}`];
-      delete photoMemoryCache[`guide_photo_guide-${category}`];
-      delete photoMemoryCache[`guide_photo_${category}`];
-      PhotoStorageDB.deletePhoto(`guide_photo_guide-${normCat}`);
-      PhotoStorageDB.deletePhoto(`guide_photo_${normCat}`);
-      PhotoStorageDB.deletePhoto(`guide_photo_guide-${category}`);
-      PhotoStorageDB.deletePhoto(`guide_photo_${category}`);
+      keysToManage.forEach((k) => {
+        delete photoMemoryCache[k];
+        PhotoStorageDB.deletePhoto(k);
+      });
     }
 
     // Immediately update guide in local storage

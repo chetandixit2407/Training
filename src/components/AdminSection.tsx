@@ -4,6 +4,7 @@ import { StorageService, fileToDataUrl } from '../services/storageService';
 import { AITrainingService } from '../services/aiTrainingService';
 import { DEFAULT_USERS } from '../data/defaultData';
 import { VoiceButton } from './VoiceButton';
+import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
 import {
   Shield,
   ShieldCheck,
@@ -388,41 +389,68 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
     }
   };
 
-  // Delete single photo
-  const handleDeletePhoto = async (photoId: string, photoUrl?: string) => {
+  // Photo deletion confirmation modal state
+  const [photoToDelete, setPhotoToDelete] = useState<{
+    id: string;
+    url?: string;
+    category: string;
+    index: number;
+    roomName: string;
+    totalPhotos: number;
+  } | null>(null);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [deletePhotoError, setDeletePhotoError] = useState<string | null>(null);
+
+  // Request single photo deletion (opens confirmation modal)
+  const handleRequestDeletePhoto = (photoId: string, photoUrl?: string, customIndex?: number) => {
     if (!selectedGuide) return;
-    
-    // Resolve admin credentials
-    const adminUser = currentUser?.role === 'admin'
-      ? currentUser
-      : users.find((u) => u.role === 'admin') || DEFAULT_USERS[2];
-
-    const confirmMsg =
-      language === 'hi'
-        ? 'क्या आप इस संदर्भ फोटो को सर्वर और डेटाबेस से हमेशा के लिए हटाना चाहते हैं?'
-        : 'Are you sure you want to permanently delete this reference photo from cloud storage and database?';
-
-    if (!window.confirm(confirmMsg)) return;
-
-    try {
-      const activeIdx = previewPhotoIndex !== null
+    setDeletePhotoError(null);
+    const activeIdx =
+      typeof customIndex === 'number'
+        ? customIndex
+        : previewPhotoIndex !== null
         ? previewPhotoIndex
         : roomPhotos.findIndex((p) => p.id === photoId || p.url === photoUrl);
 
+    const matchedPhoto = roomPhotos[activeIdx] || roomPhotos.find((p) => p.id === photoId || p.url === photoUrl);
+    setPhotoToDelete({
+      id: matchedPhoto?.id || photoId,
+      url: matchedPhoto?.url || photoUrl,
+      category: selectedGuide.category,
+      index: activeIdx >= 0 ? activeIdx : 0,
+      roomName: selectedGuide.titleEn || selectedGuide.titleHi || 'Room',
+      totalPhotos: roomPhotos.length,
+    });
+  };
+
+  // Backwards-compatible alias
+  const handleDeletePhoto = handleRequestDeletePhoto;
+
+  // Confirm and execute single photo deletion permanently from storage & database
+  const handleConfirmDeletePhoto = async () => {
+    if (!photoToDelete || !selectedGuide) return;
+    setIsDeletingPhoto(true);
+    setDeletePhotoError(null);
+
+    try {
+      const adminUser = currentUser?.role === 'admin'
+        ? currentUser
+        : users.find((u) => u.role === 'admin') || DEFAULT_USERS[2];
+
       const res = await AITrainingService.deleteRoomPhotoItem(
-        selectedGuide.category,
-        photoId,
+        photoToDelete.category,
+        photoToDelete.id,
         adminUser,
-        photoUrl,
-        activeIdx >= 0 ? activeIdx : undefined
+        photoToDelete.url,
+        photoToDelete.index
       );
 
       if (res.success) {
         const updatedPhotos = res.photos || [];
         setRoomPhotos(updatedPhotos);
-        StorageService.setRoomPhotos(selectedGuide.category, updatedPhotos);
+        StorageService.setRoomPhotos(photoToDelete.category, updatedPhotos);
 
-        // Advance viewer or close if last photo
+        // Advance viewer or close if last photo was deleted
         if (previewPhotoIndex !== null || previewPhoto !== null) {
           if (updatedPhotos.length === 0) {
             // Last photo deleted: close viewer and show empty state
@@ -430,22 +458,27 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
             setPreviewPhoto(null);
           } else {
             // Multiple photos existed: delete selected and automatically show next available photo
-            const nextIdx = Math.min(activeIdx >= 0 ? activeIdx : 0, updatedPhotos.length - 1);
+            const nextIdx = Math.min(photoToDelete.index, updatedPhotos.length - 1);
             setPreviewPhotoIndex(nextIdx);
             setPreviewPhoto(updatedPhotos[nextIdx]);
           }
         }
 
+        setPhotoToDelete(null);
         setGuideSuccessMsg(
           language === 'hi'
             ? 'संदर्भ फोटो सर्वर और डेटाबेस से सफलतापूर्वक हटा दिया गया है!'
             : 'Reference photo permanently deleted from cloud storage and database!'
         );
         onRefreshData();
-        setTimeout(() => setGuideSuccessMsg(null), 3000);
+        setTimeout(() => setGuideSuccessMsg(null), 3500);
+      } else {
+        throw new Error(res.message || 'Failed to delete photo');
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to delete photo');
+      setDeletePhotoError(err.message || 'Failed to delete photo');
+    } finally {
+      setIsDeletingPhoto(false);
     }
   };
 
@@ -575,7 +608,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
     e.preventDefault();
     if (!taskTitleHi.trim() || !taskInstructionsHi.trim()) return;
 
-    const chosenPhoto = taskPhotoUrl || selectedGuide?.photoUrl || '/src/assets/images/office_pantry_setup_1793614167563.jpg';
+    const chosenPhoto = taskPhotoUrl || selectedGuide?.photoUrl || '';
 
     const newTask: DailyTask = {
       id: `task-${Date.now()}`,
@@ -2210,6 +2243,25 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
           </div>
         );
       })()}
+
+      {/* Delete Photo Confirmation Modal */}
+      <DeletePhotoConfirmModal
+        isOpen={photoToDelete !== null}
+        onClose={() => {
+          if (!isDeletingPhoto) {
+            setPhotoToDelete(null);
+            setDeletePhotoError(null);
+          }
+        }}
+        onConfirm={handleConfirmDeletePhoto}
+        isDeleting={isDeletingPhoto}
+        language={language}
+        photoUrl={photoToDelete?.url}
+        roomName={photoToDelete?.roomName}
+        angleIndex={photoToDelete?.index}
+        totalPhotos={photoToDelete?.totalPhotos}
+        error={deletePhotoError}
+      />
 
     </div>
   );

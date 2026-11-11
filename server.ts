@@ -18,15 +18,24 @@ const PORT = 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Initialize Google GenAI client (User-Agent header required by AI Studio guidelines)
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+// Safely initialize Google GenAI client only when GEMINI_API_KEY is present
+let aiClient: GoogleGenAI | null = null;
+function getAi(): GoogleGenAI | null {
+  if (!process.env.GEMINI_API_KEY) {
+    return null;
+  }
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return aiClient;
+}
 
 // Path to persistent training knowledge database and permanent/temporary photo uploads
 const DATA_DIR = path.join(__dirname, 'data');
@@ -61,7 +70,7 @@ const DEFAULT_KNOWLEDGE = [
     category: 'reception',
     roomNameHi: 'RECEPTION AREA',
     roomNameEn: 'RECEPTION AREA',
-    referencePhotoUrl: '/src/assets/images/office_reception_lounge_1793614168526.jpg',
+    referencePhotoUrl: '/uploads/reference/ref_reception_1794401118506_2hm8.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin (Lalit Sir)',
@@ -133,7 +142,7 @@ const DEFAULT_KNOWLEDGE = [
         titleHi: 'रिसेप्शन एरिया व फ्रंट डेस्क मानक',
         titleEn: 'Reception Area & Front Desk Standard',
         category: 'reception',
-        referencePhotoUrl: '/src/assets/images/office_reception_lounge_1793614168526.jpg',
+        referencePhotoUrl: '/uploads/reference/ref_reception_1794401118506_2hm8.jpg',
         steps: [
           {
             stepNumber: 1,
@@ -159,7 +168,7 @@ const DEFAULT_KNOWLEDGE = [
     category: 'lalit_sir_cabin',
     roomNameHi: 'LALIT SIR CABIN',
     roomNameEn: 'LALIT SIR CABIN',
-    referencePhotoUrl: '/src/assets/images/office_cabin_desk_1793614184873.jpg',
+    referencePhotoUrl: '/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin',
@@ -237,7 +246,7 @@ const DEFAULT_KNOWLEDGE = [
         titleHi: 'ललित सर कैबिन व्यवस्था व प्रोटोकॉल',
         titleEn: 'Lalit Sir Cabin Arrangement & Protocol',
         category: 'lalit_sir_cabin',
-        referencePhotoUrl: '/src/assets/images/office_cabin_desk_1793614184873.jpg',
+        referencePhotoUrl: '/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
         steps: [
           {
             stepNumber: 1,
@@ -263,7 +272,7 @@ const DEFAULT_KNOWLEDGE = [
     category: 'the_skyline',
     roomNameHi: 'THE SKYLINE',
     roomNameEn: 'THE SKYLINE',
-    referencePhotoUrl: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+    referencePhotoUrl: '/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin',
@@ -331,7 +340,7 @@ const DEFAULT_KNOWLEDGE = [
         titleHi: 'द स्काईलाइन मीटिंग रूम मानक',
         titleEn: 'The Skyline Meeting Room Standard',
         category: 'the_skyline',
-        referencePhotoUrl: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+        referencePhotoUrl: '/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg',
         steps: [],
         cleaningProcedureHi: '',
         cleaningProcedureEn: '',
@@ -351,7 +360,7 @@ const DEFAULT_KNOWLEDGE = [
     category: 'the_community',
     roomNameHi: 'THE COMMUNITY',
     roomNameEn: 'THE COMMUNITY',
-    referencePhotoUrl: '/src/assets/images/office_meeting_room_1793614169917.jpg',
+    referencePhotoUrl: '/uploads/reference/ref_the_community_1794400603611_jrnc.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin',
@@ -712,11 +721,12 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   prestige_loft: [
     {
       id: 'photo_prestige_1',
-      url: '/src/assets/images/office_reception_lounge_1793614168526.jpg',
-      captionHi: '2 सोफे, 45° फूले हुए कुशन व सेंटर टेबल व्यवस्था',
-      captionEn: '2 sofas, 45° plumped cushions & center table setup',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_prestige_loft_1794400567624_qayv.jpg',
+      fileName: 'ref_prestige_loft_1794400567624_qayv.jpg',
+      captionHi: 'प्रेस्टीज लॉफ्ट: 2 सोफे, 45° कुशन व सेंटर टेबल व्यवस्था',
+      captionEn: 'Prestige Loft: 2 sofas, 45° plumped cushions & center table setup',
+      uploadedAt: '2026-11-11T12:36:07Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -724,11 +734,12 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   the_skyline: [
     {
       id: 'photo_skyline_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'द स्काईलाइन: 8-सीटर कॉन्फ्रेंस टेबल व पानी की बोतलें',
-      captionEn: 'The Skyline: 8-seater conference table & fresh water setup',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg',
+      fileName: 'ref_the_skyline_1794400592787_as2u.jpg',
+      captionHi: 'द स्काईलाइन: 4 कुर्सियां टेबल के नीचे समानांतर अंदर व पानी व्यवस्था',
+      captionEn: 'The Skyline: 4 chairs tucked parallel under table & water setup',
+      uploadedAt: '2026-11-11T12:36:32Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -736,11 +747,12 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   the_community: [
     {
       id: 'photo_community_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'द कम्युनिटी: 10 कुर्सियां एक सीध में व स्टेशनरी पैड',
+      url: '/uploads/reference/ref_the_community_1794400603611_jrnc.jpg',
+      fileName: 'ref_the_community_1794400603611_jrnc.jpg',
+      captionHi: 'द कम्युनिटी: 10 कुर्सियां (दोनों तरफ 5-5) कतार में व स्टेशनरी पैड',
       captionEn: 'The Community: 10 chairs aligned with stationery pads',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      uploadedAt: '2026-11-11T12:36:43Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -748,11 +760,12 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   the_summit: [
     {
       id: 'photo_summit_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'द समिट: बोर्डरूम कुर्सियां व एचडीएमआई केबल बॉक्स',
-      captionEn: 'The Summit: Boardroom seating & HDMI cable console',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_the_summit_1794400682325_5379.jpg',
+      fileName: 'ref_the_summit_1794400682325_5379.jpg',
+      captionHi: 'द समिट: 4 एग्जीक्यूटिव कुर्सियां व टेबल व्यवस्था',
+      captionEn: 'The Summit: 4 executive chairs & conference table setup',
+      uploadedAt: '2026-11-11T12:38:02Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -760,11 +773,12 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   wcr_air: [
     {
       id: 'photo_wcrair_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'डब्ल्यूसीआर एयर: क्विक-मीट राउंड टेबल व 4 कुर्सियां',
-      captionEn: 'WCR Air: Quick-meet table and 4 aligned chairs',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_wcr_air_1794400701090_f35c.jpg',
+      fileName: 'ref_wcr_air_1794400701090_f35c.jpg',
+      captionHi: 'डब्ल्यूसीआर एयर: राउंड टेबल व 4 कुर्सियां व्यवस्था',
+      captionEn: 'WCR Air: Round table & 4 aligned chairs',
+      uploadedAt: '2026-11-11T12:38:21Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -772,23 +786,36 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   elegance_suite: [
     {
       id: 'photo_elegance_1',
-      url: '/src/assets/images/office_cabin_desk_1793614184873.jpg',
-      captionHi: 'एलिगेंस सुइट: सीनियर मैनेजर डेस्क व विज़िटर कुर्सियां',
-      captionEn: 'Elegance Suite: Senior manager desk and visitor chairs',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_elegance_suite_1794400736550_enns.jpg',
+      fileName: 'ref_elegance_suite_1794400736550_enns.jpg',
+      captionHi: 'एलिगेंस सुइट: सीनियर मैनेजर डेस्क व कुर्सियां व्यवस्था (कोण 1)',
+      captionEn: 'Elegance Suite: Senior manager desk and chairs setup (Angle 1)',
+      uploadedAt: '2026-11-11T12:38:56Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
+      photoType: 'reference',
+    },
+    {
+      id: 'photo_elegance_2',
+      url: '/uploads/reference/ref_elegance_suite_1794400764795_glxg.jpg',
+      fileName: 'ref_elegance_suite_1794400764795_glxg.jpg',
+      captionHi: 'एलिगेंस सुइट: विज़िटर कुर्सियां व कोस्टर व्यवस्था (कोण 2)',
+      captionEn: 'Elegance Suite: Visitor chairs & coaster setup (Angle 2)',
+      uploadedAt: '2026-11-11T12:39:24Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: false,
       photoType: 'reference',
     },
   ],
   prime_loft: [
     {
       id: 'photo_primeloft_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'प्राइम लॉफ्ट: 6 कुर्सियां व टीवी प्रेजेंटेशन सेटअप',
-      captionEn: 'Prime Loft: 6 chairs and TV presentation setup',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_prime_loft_1794401077352_iqu9.jpg',
+      fileName: 'ref_prime_loft_1794401077352_iqu9.jpg',
+      captionHi: 'प्राइम लॉफ्ट: 3 कुर्सियां व डिस्कशन टेबल व्यवस्था',
+      captionEn: 'Prime Loft: 3 chairs and discussion table setup',
+      uploadedAt: '2026-11-11T12:44:37Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -796,11 +823,12 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   regency: [
     {
       id: 'photo_regency_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'रीजेंसी: वीआईपी डिस्कशन टेबल, लेदर कुर्सियां',
-      captionEn: 'Regency: VIP discussion table, executive chairs',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_regency_1794401083315_fj25.jpg',
+      fileName: 'ref_regency_1794401083315_fj25.jpg',
+      captionHi: 'रीजेंसी: 3 कुर्सियां, साफ टेबल व पानी की व्यवस्था',
+      captionEn: 'Regency: 3 chairs, clean table and water setup',
+      uploadedAt: '2026-11-11T12:44:43Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
@@ -808,63 +836,65 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   lalit_sir_cabin: [
     {
       id: 'photo_lalitsir_1',
-      url: '/src/assets/images/office_cabin_desk_1793614184873.jpg',
-      captionHi: 'ललित सर डेस्क: राइट लेदर कोस्टर पर पानी व उल्टा गिलास',
-      captionEn: 'Lalit Sir desk: Right leather coaster with carafe & inverted glass',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
+      fileName: 'ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
+      captionHi: 'ललित सर डेस्क: मुख्य लेदर चेयर बीच में सीधी व विज़िटर कुर्सियां (कोण 1)',
+      captionEn: 'Lalit Sir desk: Centered executive chair & visitor chairs (Angle 1)',
+      uploadedAt: '2026-11-11T12:44:57Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
+      photoType: 'reference',
+    },
+    {
+      id: 'photo_lalitsir_2',
+      url: '/uploads/reference/ref_lalit_sir_cabin_1794401101134_tarr.jpg',
+      fileName: 'ref_lalit_sir_cabin_1794401101134_tarr.jpg',
+      captionHi: 'ललित सर डेस्क: राइट लेदर कोस्टर पर ढका जग व उल्टा गिलास (कोण 2)',
+      captionEn: 'Lalit Sir desk: Right leather coaster with carafe & inverted glass (Angle 2)',
+      uploadedAt: '2026-11-11T12:45:01Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: false,
+      photoType: 'reference',
+    },
+    {
+      id: 'photo_lalitsir_3',
+      url: '/uploads/reference/ref_lalit_sir_cabin_1794401107188_rtzf.jpg',
+      fileName: 'ref_lalit_sir_cabin_1794401107188_rtzf.jpg',
+      captionHi: 'ललित सर कैबिन: संपूर्ण कैबिन लेआउट व कुर्सियां व्यवस्था (कोण 3)',
+      captionEn: 'Lalit Sir Cabin: Full cabin layout and seating arrangement (Angle 3)',
+      uploadedAt: '2026-11-11T12:45:07Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: false,
       photoType: 'reference',
     },
   ],
   reception: [
     {
       id: 'photo_reception_1',
-      url: '/src/assets/images/office_reception_lounge_1793614168526.jpg',
-      captionHi: 'रिसेप्शन लाउंज: विजिटर सोफा, कुशन 45° व विजिटर डायरी',
-      captionEn: 'Reception lounge: Visitor sofa, 45° cushions & guest directory',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
+      url: '/uploads/reference/ref_reception_1794401118506_2hm8.jpg',
+      fileName: 'ref_reception_1794401118506_2hm8.jpg',
+      captionHi: 'रिसेप्शन लाउंज: विजिटर सोफा, कुशन 45° व सेंटर टेबल (कोण 1)',
+      captionEn: 'Reception lounge: Visitor sofa, 45° cushions & center table (Angle 1)',
+      uploadedAt: '2026-11-11T12:45:18Z',
+      uploadedBy: 'Admin (Chetan)',
       isPrimary: true,
       photoType: 'reference',
     },
-  ],
-  pantry: [
     {
-      id: 'photo_pantry_1',
-      url: '/src/assets/images/office_pantry_setup_1793614167563.jpg',
-      captionHi: 'पैंट्री काउंटर: कॉफी वेंडिंग मशीन, ट्रे व कप रैक सफाई',
-      captionEn: 'Pantry counter: Coffee machine, trays & clean cup rack',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
-      isPrimary: true,
+      id: 'photo_reception_2',
+      url: '/uploads/reference/ref_reception_1794401126183_ekmm.jpg',
+      fileName: 'ref_reception_1794401126183_ekmm.jpg',
+      captionHi: 'रिसेप्शन लाउंज: कोस्टर, पानी की बोतल व विजिटर डायरी (कोण 2)',
+      captionEn: 'Reception lounge: Coasters, water bottle & guest directory (Angle 2)',
+      uploadedAt: '2026-11-11T12:45:26Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: false,
       photoType: 'reference',
     },
   ],
-  lights_equipment: [
-    {
-      id: 'photo_lights_1',
-      url: '/src/assets/images/office_switchboard_lights_1793614186214.jpg',
-      captionHi: 'स्विच बोर्ड मार्किंग, एसी रिमोट व लाइटिंग कंट्रोल',
-      captionEn: 'Switchboard labels, AC remote & lighting control panel',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  workstations: [
-    {
-      id: 'photo_workstations_1',
-      url: '/src/assets/images/office_meeting_room_1793614169917.jpg',
-      captionHi: 'वर्कस्टेशन बे: साफ डेस्क, सीधी कुर्सियां व खाली डस्टबिन',
-      captionEn: 'Workstation bay: Clean desks, aligned chairs & empty bins',
-      uploadedAt: '2026-11-02T08:30:00Z',
-      uploadedBy: 'Admin (System)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
+  pantry: [],
+  lights_equipment: [],
+  workstations: [],
 };
 
 // Canonical Room Category Normalizer
@@ -972,12 +1002,17 @@ function getImageDataForAI(url: string): { mimeType: string; data: string } | nu
   }
   try {
     let filePath = '';
-    if (url.startsWith('/uploads/')) {
-      filePath = path.join(UPLOADS_DIR, path.basename(url));
-    } else if (url.startsWith('/src/assets/images/')) {
-      filePath = path.join(__dirname, url);
-    } else if (url.startsWith('src/assets/images/')) {
-      filePath = path.join(__dirname, url);
+    if (url.startsWith('/uploads/reference/')) {
+      filePath = path.join(REFERENCE_UPLOADS_DIR, path.basename(url));
+    } else if (url.startsWith('/uploads/completion/')) {
+      filePath = path.join(COMPLETION_UPLOADS_DIR, path.basename(url));
+    } else if (url.startsWith('/uploads/')) {
+      const candidates = [
+        path.join(REFERENCE_UPLOADS_DIR, path.basename(url)),
+        path.join(COMPLETION_UPLOADS_DIR, path.basename(url)),
+        path.join(UPLOADS_DIR, path.basename(url)),
+      ];
+      filePath = candidates.find((p) => fs.existsSync(p)) || path.join(UPLOADS_DIR, path.basename(url));
     }
     if (filePath && fs.existsSync(filePath)) {
       const buf = fs.readFileSync(filePath);
@@ -1362,41 +1397,67 @@ app.post('/api/photos/replace-item', requireAdmin, (req, res) => {
 // Helper function to execute photo deletion and full database synchronization
 function executePhotoDeletion(category: string, photoId: string, req: express.Request, res: express.Response) {
   try {
-    const normCat = normalizeRoomCategory(category);
+    const rawCat = (category || req.body?.category || req.query?.category || '').toString().trim();
+    const normCat = normalizeRoomCategory(rawCat);
     const decodedId = decodeURIComponent(photoId || '');
     const targetUrl = (req.body?.url || req.query?.url || '').toString().trim();
     const targetPhotoId = (req.body?.photoId || req.query?.photoId || photoId || '').toString().trim();
+    const pIdx = Number(req.body?.photoIndex ?? req.query?.photoIndex);
 
     const allRoomPhotos = loadRoomPhotos();
     let catKey = Object.keys(allRoomPhotos).find((k) => normalizeRoomCategory(k) === normCat) || normCat;
-    let list = allRoomPhotos[catKey] || [];
+    let list = allRoomPhotos[catKey] || allRoomPhotos[normCat] || [];
 
-    // Find index of photo to delete with multi-angle matching
-    let idx = list.findIndex((p) => {
-      if (p.id && (p.id === targetPhotoId || p.id === photoId || p.id === decodedId)) return true;
-      if (p.url && (p.url === targetPhotoId || p.url === photoId || p.url === decodedId || p.url === targetUrl)) return true;
-      const baseP = path.basename(p.url || '');
-      const baseTarget = path.basename(targetPhotoId || photoId || decodedId || targetUrl || '');
-      if (baseP && baseTarget && baseP === baseTarget) return true;
-      // Handle synthetic ID like photo_prestige_loft_default or photo_prestige_1
-      if (targetPhotoId.endsWith('_default') && list.length === 1) return true;
-      return false;
-    });
+    const isSpecialId = (id: string) => !id || id === 'current' || id === 'undefined' || id === 'null';
+    let idx = -1;
 
-    // If still not found and the gallery has exactly 1 photo, match that photo
+    // 1. Try matching by exact photoId
+    if (!isSpecialId(targetPhotoId) || !isSpecialId(decodedId)) {
+      idx = list.findIndex((p) => {
+        if (p.id && !isSpecialId(targetPhotoId) && (p.id === targetPhotoId || p.id === decodedId)) return true;
+        return false;
+      });
+    }
+
+    // 2. Try matching by URL (exact or relative)
+    if (idx === -1 && (targetUrl || (targetPhotoId && targetPhotoId.includes('/')))) {
+      const matchUrl = targetUrl || targetPhotoId;
+      idx = list.findIndex((p) => {
+        if (!p.url) return false;
+        if (p.url === matchUrl) return true;
+        if (matchUrl.endsWith(p.url) || p.url.endsWith(matchUrl)) return true;
+        return false;
+      });
+    }
+
+    // 3. Try matching by filename basename
+    if (idx === -1) {
+      const candidates = [targetUrl, targetPhotoId, decodedId].filter((c) => !isSpecialId(c));
+      for (const cand of candidates) {
+        const baseTarget = path.basename(cand.split('?')[0].split('#')[0]);
+        if (baseTarget && baseTarget !== '.' && baseTarget !== '/') {
+          const found = list.findIndex((p) => {
+            const baseP = path.basename((p.url || '').split('?')[0].split('#')[0]);
+            return baseP === baseTarget;
+          });
+          if (found !== -1) {
+            idx = found;
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. Try matching by carousel photoIndex
+    if (idx === -1 && !isNaN(pIdx) && pIdx >= 0 && pIdx < list.length) {
+      idx = pIdx;
+    }
+
+    // 5. If gallery has exactly 1 photo, delete that photo
     if (idx === -1 && list.length === 1) {
       idx = 0;
     }
 
-    // Match by explicit photoIndex if passed from carousel viewer
-    if (idx === -1) {
-      const pIdx = Number(req.body?.photoIndex ?? req.query?.photoIndex);
-      if (!isNaN(pIdx) && pIdx >= 0 && pIdx < list.length) {
-        idx = pIdx;
-      }
-    }
-
-    // Fallback: If not found in current category, search across all categories
     let removedPhoto: any = null;
     if (idx === -1) {
       for (const k of Object.keys(allRoomPhotos)) {
@@ -1640,9 +1701,10 @@ Provide all outputs in conversational, respectful Hindi with accurate English tr
 
     let analysisData: any = null;
 
-    if (process.env.GEMINI_API_KEY) {
+    const aiInstance = getAi();
+    if (aiInstance) {
       try {
-        const response = await ai.models.generateContent({
+        const response = await aiInstance.models.generateContent({
           model: 'gemini-3.8-flash',
           contents: { parts },
           config: {
@@ -2657,8 +2719,9 @@ async function generateGeminiSpeech(text: string, voiceName = 'Kore'): Promise<{
     throw new Error('Empty text provided for speech synthesis');
   }
 
-  // If in cooldown due to previous quota limit, immediately return resilient audible fallback
-  if (Date.now() < ttsCooldownUntil) {
+  const aiInstance = getAi();
+  // If no API key configured or in cooldown due to previous quota limit, immediately return resilient audible fallback
+  if (!aiInstance || Date.now() < ttsCooldownUntil) {
     const fallbackBase64 = generateFallbackAudibleWav(cleanText);
     return {
       audio: fallbackBase64,
@@ -2676,7 +2739,7 @@ async function generateGeminiSpeech(text: string, voiceName = 'Kore'): Promise<{
       timer = setTimeout(() => reject(new Error('TTS timeout')), 6000);
     });
 
-    const ttsCall = ai.models.generateContent({
+    const ttsCall = aiInstance.models.generateContent({
       model: 'gemini-3.8-flash-lite-tts',
       contents: [
         {
@@ -2760,6 +2823,14 @@ app.post('/api/ai/synthesize-speech', async (req, res) => {
 async function startServer() {
   const server = http.createServer(app);
 
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use.`);
+    } else {
+      console.error('Server error:', err);
+    }
+  });
+
   // Run 40-day photo retention cleanup on server start
   try {
     const cleanupResult = cleanupExpiredCompletionPhotos();
@@ -2782,7 +2853,10 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer } = await import('vite');
     const vite = await createServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -2794,9 +2868,22 @@ async function startServer() {
   }
 
   server.listen(PORT, '0.0.0.0', () => {
+    console.log(`  ➜  Local:   http://localhost:${PORT}/`);
+    console.log(`  ➜  Network: http://0.0.0.0:${PORT}/`);
     console.log(`Office Operations & AI Training App running on port ${PORT}`);
   });
+
+  const gracefulShutdown = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
 
