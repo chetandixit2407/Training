@@ -5,6 +5,7 @@ import { StorageService, fileToDataUrl, normalizeRoomCategory } from '../service
 import { AITrainingService } from '../services/aiTrainingService';
 import { TaskCompleteModal } from './TaskCompleteModal';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { UpdatePhotoConfirmModal } from './UpdatePhotoConfirmModal';
 import { DateHistoryModal } from './DateHistoryModal';
 import { ReferenceImage } from './ReferenceImage';
 import { DEFAULT_USERS } from '../data/defaultData';
@@ -77,6 +78,15 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
   const activeGuideRef = useRef<string | null>(null);
 
   const [isReplacingLightbox, setIsReplacingLightbox] = useState(false);
+  const [lightboxErrorMsg, setLightboxErrorMsg] = useState<string | null>(null);
+  const [pendingLightboxUpdate, setPendingLightboxUpdate] = useState<{
+    category: string;
+    photoId: string;
+    currentPhotoUrl?: string;
+    newPhotoPreview: string;
+    photoIndex?: number;
+    roomName: string;
+  } | null>(null);
 
   const handleStartLightboxReplace = () => {
     if (lightboxReplaceInputRef.current) {
@@ -89,40 +99,62 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
     const file = e.target.files?.[0];
     if (!file || !lightboxRoomCategory || !currentLightboxPhoto) return;
 
-    setIsReplacingLightbox(true);
     try {
       const base64 = await fileToDataUrl(file);
+      setPendingLightboxUpdate({
+        category: lightboxRoomCategory,
+        photoId: currentLightboxPhoto.id,
+        currentPhotoUrl: currentLightboxPhoto.url,
+        newPhotoPreview: base64,
+        photoIndex: lightboxPhotoIndex,
+        roomName: lightboxRoomCategory.replace(/_/g, ' ').toUpperCase(),
+      });
+    } catch (err: any) {
+      setLightboxErrorMsg(err.message || 'Failed to read image file');
+      setTimeout(() => setLightboxErrorMsg(null), 4000);
+    } finally {
+      if (lightboxReplaceInputRef.current) lightboxReplaceInputRef.current.value = '';
+    }
+  };
+
+  const handleExecuteLightboxUpdate = async () => {
+    if (!pendingLightboxUpdate) return;
+    setIsReplacingLightbox(true);
+    setLightboxErrorMsg(null);
+    try {
       const adminUser = currentUser?.role === 'admin'
         ? currentUser
         : StorageService.getUsers().find((u) => u.role === 'admin');
 
       const res = await AITrainingService.replaceRoomPhotoItem({
-        category: lightboxRoomCategory,
-        photoId: currentLightboxPhoto.id,
-        photoBase64: base64,
-        photoUrl: currentLightboxPhoto.url,
-        photoIndex: lightboxPhotoIndex,
+        category: pendingLightboxUpdate.category,
+        photoId: pendingLightboxUpdate.photoId,
+        photoBase64: pendingLightboxUpdate.newPhotoPreview,
+        photoUrl: pendingLightboxUpdate.currentPhotoUrl,
+        photoIndex: pendingLightboxUpdate.photoIndex,
         user: adminUser,
       });
 
       if (res.success) {
         const updated = res.photos || [];
-        StorageService.setRoomPhotos(lightboxRoomCategory, updated);
+        StorageService.setRoomPhotos(pendingLightboxUpdate.category, updated);
         setLightboxPhotos(updated);
         setRefreshTick((t) => t + 1);
 
         setQuickSuccessMsg({
-          id: lightboxRoomCategory,
+          id: pendingLightboxUpdate.category,
           text: language === 'hi'
-            ? 'संदर्भ फोटो सफलतापूर्वक अपडेट/बदल दी गई है!'
-            : 'Reference photo successfully updated and replaced!',
+            ? 'संदर्भ फोटो सफलतापूर्वक अपडेट कर दी गई और पुरानी फोटो इतिहास में सुरक्षित हो गई!'
+            : 'Reference photo successfully updated! Previous photo preserved in Date-Wise History.',
         });
         setTimeout(() => setQuickSuccessMsg(null), 3500);
 
         onRefreshData?.();
       }
+      setPendingLightboxUpdate(null);
     } catch (err: any) {
-      alert(err.message || 'Failed to replace photo');
+      setLightboxErrorMsg(err.message || 'Failed to replace photo');
+      setTimeout(() => setLightboxErrorMsg(null), 5000);
     } finally {
       setIsReplacingLightbox(false);
     }
@@ -273,7 +305,8 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
       }
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error uploading photos');
+      setLightboxErrorMsg(err.message || 'Error uploading photos');
+      setTimeout(() => setLightboxErrorMsg(null), 4000);
     } finally {
       setUploadingForGuideId(null);
     }
@@ -297,7 +330,8 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
         onRefreshData?.();
       }
     } catch (err: any) {
-      alert(err.message || 'AI analysis failed');
+      setLightboxErrorMsg(err.message || 'AI analysis failed');
+      setTimeout(() => setLightboxErrorMsg(null), 4000);
     } finally {
       setIsAnalyzingAI(null);
     }
@@ -417,7 +451,8 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
         onRefreshData?.();
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to set primary');
+      setLightboxErrorMsg(err.message || 'Failed to set primary');
+      setTimeout(() => setLightboxErrorMsg(null), 4000);
     }
   };
 
@@ -1427,6 +1462,12 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                   : currentLightboxPhoto.captionEn || currentLightboxPhoto.captionHi || 'Official Reference Photo'}
               </p>
 
+              {lightboxErrorMsg && (
+                <div className="text-xs font-bold text-rose-300 bg-rose-950/80 border border-rose-700 px-3 py-1.5 rounded-lg inline-block">
+                  {lightboxErrorMsg}
+                </div>
+              )}
+
               {/* Thumbnail Strip */}
               {activeLightboxPhotos.length > 1 && (
                 <div className="flex items-center justify-center gap-2 overflow-x-auto py-1">
@@ -1449,6 +1490,22 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
           </div>
         </div>
       )}
+
+      {/* Update Reference Photo Confirmation Modal */}
+      <UpdatePhotoConfirmModal
+        isOpen={pendingLightboxUpdate !== null}
+        onClose={() => {
+          if (!isReplacingLightbox) {
+            setPendingLightboxUpdate(null);
+          }
+        }}
+        onConfirm={handleExecuteLightboxUpdate}
+        isUpdating={isReplacingLightbox}
+        language={language}
+        roomName={pendingLightboxUpdate?.roomName}
+        currentPhotoUrl={pendingLightboxUpdate?.currentPhotoUrl}
+        newPhotoPreview={pendingLightboxUpdate?.newPhotoPreview}
+      />
 
       {/* Delete Photo Confirmation Modal */}
       <DeletePhotoConfirmModal

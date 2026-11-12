@@ -9,13 +9,16 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "export:project": "node scripts/export-project-zip.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/adm-zip": "^0.5.8",
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.1",
+    "adm-zip": "^0.6.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^13.3.0",

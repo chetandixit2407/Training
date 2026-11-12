@@ -24,9 +24,14 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
   const [hasError, setHasError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [resolvedCloudSrc, setResolvedCloudSrc] = useState<string>('');
+  const [fallbackSrc, setFallbackSrc] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const isCloudAsset = Boolean(src && src.startsWith('cloud-asset://'));
+
+  useEffect(() => {
+    setFallbackSrc(null);
+  }, [src]);
 
   useEffect(() => {
     let active = true;
@@ -58,10 +63,10 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
     };
   }, [src, isCloudAsset, retryCount]);
 
-  const rawSrc = isCloudAsset ? resolvedCloudSrc : src;
+  const activeRawSrc = fallbackSrc || (isCloudAsset ? resolvedCloudSrc : src);
 
-  const normalizedSrc = rawSrc
-    ? rawSrc.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, '')
+  const normalizedSrc = activeRawSrc
+    ? activeRawSrc.replace(/^https?:\/\/[^/]+(?=\/uploads\/)/i, '')
     : '';
 
   const effectiveSrc =
@@ -179,20 +184,22 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
             }
           }}
           onError={() => {
+            if (!fallbackSrc && effectiveSrc && effectiveSrc.startsWith('/uploads/reference/')) {
+              const m = effectiveSrc.match(/ref_([a-z0-9_]+?)(?:_\d+|[._])/i);
+              const cat = m ? m[1] : '';
+              if (cat) {
+                const canonical = `/uploads/reference/ref_${cat}_canonical.jpg`;
+                if (effectiveSrc !== canonical) {
+                  console.info(`[ReferenceImage] Attempting canonical fallback for ${effectiveSrc} -> ${canonical}`);
+                  setFallbackSrc(canonical);
+                  setIsLoading(true);
+                  return;
+                }
+              }
+            }
             setIsLoading(false);
             setHasError(true);
             console.error(`[ReferenceImage] Failed to load image: ${effectiveSrc} (attempt ${retryCount + 1})`);
-            if (effectiveSrc && effectiveSrc.startsWith('/uploads/')) {
-              fetch(effectiveSrc, { method: 'HEAD' })
-                .then((res) => {
-                  if (!res.ok) {
-                    console.error(`[ReferenceImage] Server responded HTTP ${res.status} (${res.statusText}) for ${effectiveSrc}`);
-                  }
-                })
-                .catch((err) => {
-                  console.error(`[ReferenceImage] Network error fetching ${effectiveSrc}:`, err);
-                });
-            }
           }}
         />
       )}

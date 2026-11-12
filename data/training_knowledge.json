@@ -4,7 +4,7 @@
     "category": "reception",
     "roomNameHi": "RECEPTION AREA",
     "roomNameEn": "RECEPTION AREA",
-    "referencePhotoUrl": "/uploads/reference/ref_reception_1794401118506_2hm8.jpg",
+    "referencePhotoUrl": "/uploads/reference/ref_reception_1794403142696_784z.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin (Lalit Sir)",
@@ -101,7 +101,7 @@
       }
     ],
     "createdAt": "2026-11-02T08:30:00Z",
-    "updatedAt": "2026-11-11T06:03:59.171Z"
+    "updatedAt": "2026-11-12T06:24:43.935Z"
   },
   {
     "id": "knowledge-lalit-sir-cabin",
@@ -211,14 +211,14 @@
       }
     ],
     "createdAt": "2026-11-02T08:45:00Z",
-    "updatedAt": "2026-11-02T08:45:00Z"
+    "updatedAt": "2026-11-12T06:46:01.497Z"
   },
   {
     "id": "knowledge-the-skyline",
     "category": "the_skyline",
     "roomNameHi": "THE SKYLINE",
     "roomNameEn": "THE SKYLINE",
-    "referencePhotoUrl": "/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg",
+    "referencePhotoUrl": "/uploads/reference/ref_the_skyline_1794465914968_ax9m.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin",
@@ -297,14 +297,14 @@
       }
     ],
     "createdAt": "2026-11-02T09:00:00Z",
-    "updatedAt": "2026-11-02T09:00:00Z"
+    "updatedAt": "2026-11-12T06:45:14.967Z"
   },
   {
     "id": "knowledge-the-community",
     "category": "the_community",
     "roomNameHi": "THE COMMUNITY",
     "roomNameEn": "THE COMMUNITY",
-    "referencePhotoUrl": "/uploads/reference/ref_the_community_1794400603611_jrnc.jpg",
+    "referencePhotoUrl": "/uploads/reference/ref_the_community_1794465941787_mzeu.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin",
@@ -361,6 +361,6 @@
     "voiceScriptEn": "The Community boardroom features 10 chairs and 1 large table. Tuck 5 chairs on each side straight and provide water and stationery at all 10 seats.",
     "versions": [],
     "createdAt": "2026-11-02T09:15:00Z",
-    "updatedAt": "2026-11-02T09:15:00Z"
+    "updatedAt": "2026-11-12T06:45:46.807Z"
   }
 ]

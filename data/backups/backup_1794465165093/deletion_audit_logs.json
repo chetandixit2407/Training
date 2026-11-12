@@ -1,0 +1,22 @@
+[
+  {
+    "id": "del_1794464683935_b3zo",
+    "targetType": "room_reference",
+    "targetId": "photo_reception_1794464681961_ng57q",
+    "roomId": "reception",
+    "fileName": "ref_reception_1794464681960_unbm.png",
+    "storagePath": "rooms/reception/ref_reception_1794464681960_unbm.png",
+    "deletedBy": "Admin",
+    "deletedAt": "2026-11-12T06:24:43.935Z"
+  },
+  {
+    "id": "del_1794464683277_l8x0",
+    "targetType": "room_reference",
+    "targetId": "photo_reception_1794464681258_dfjbb",
+    "roomId": "reception",
+    "fileName": "ref_reception_1794464681258_vml6.png",
+    "storagePath": "/uploads/reference/ref_reception_1794464681258_vml6.png",
+    "deletedBy": "Admin",
+    "deletedAt": "2026-11-12T06:24:43.277Z"
+  }
+]

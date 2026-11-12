@@ -5,6 +5,7 @@ import { AITrainingService } from '../services/aiTrainingService';
 import { DEFAULT_USERS } from '../data/defaultData';
 import { VoiceButton } from './VoiceButton';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { UpdatePhotoConfirmModal } from './UpdatePhotoConfirmModal';
 import { DateHistoryModal } from './DateHistoryModal';
 import { ReferenceImage } from './ReferenceImage';
 import {
@@ -37,6 +38,11 @@ import {
   Info,
   Check,
   History,
+  Archive,
+  Download,
+  HardDrive,
+  FileArchive,
+  FolderCheck,
 } from 'lucide-react';
 
 interface AdminSectionProps {
@@ -68,7 +74,26 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   onRefreshData,
 }) => {
   const [showRoomHistoryModal, setShowRoomHistoryModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'galleries' | 'users' | 'create_task' | 'completion_photos'>('galleries');
+  const [activeTab, setActiveTab] = useState<'galleries' | 'users' | 'create_task' | 'completion_photos' | 'backup_zip'>('galleries');
+
+  // Backup & ZIP Portability state
+  const [backupStats, setBackupStats] = useState<{
+    referencePhotosOnDisk: number;
+    referenceDiskSizeMb: string;
+    completionPhotosOnDisk: number;
+    completionDiskSizeMb: string;
+    databasePhotosCount: number;
+    currentStandardsCount: number;
+    archivedPhotosCount: number;
+    totalRoomsCount: number;
+  } | null>(null);
+  const [isExportingBackupZip, setIsExportingBackupZip] = useState(false);
+  const [isExportingProjectZip, setIsExportingProjectZip] = useState(false);
+  const [isRestoringZip, setIsRestoringZip] = useState(false);
+  const [restoreZipFile, setRestoreZipFile] = useState<File | null>(null);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [restoreStatusMsg, setRestoreStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
   // Completion Photos & 40-Day Retention Audit state
   const [allCompletionPhotos, setAllCompletionPhotos] = useState<CompletionPhotoItem[]>([]);
@@ -128,6 +153,16 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   const [editVoiceHi, setEditVoiceHi] = useState(() => selectedGuide?.voiceScriptHi || '');
   const [editVoiceEn, setEditVoiceEn] = useState(() => selectedGuide?.voiceScriptEn || '');
   const [guideSuccessMsg, setGuideSuccessMsg] = useState<string | null>(null);
+  const [guideErrorMsg, setGuideErrorMsg] = useState<string | null>(null);
+  const [pendingPhotoUpdate, setPendingPhotoUpdate] = useState<{
+    category: string;
+    photoId: string;
+    currentPhotoUrl?: string;
+    newPhotoPreview: string;
+    roomName: string;
+    captionHi?: string;
+    captionEn?: string;
+  } | null>(null);
 
   // Refs
   const multiFileInputRef = useRef<HTMLInputElement>(null);
@@ -210,6 +245,91 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
       setTimeout(() => setCleanupToast(null), 5000);
     } catch (err: any) {
       setCleanupToast(err.message || 'Cleanup failed');
+    }
+  };
+
+  const loadBackupStats = async () => {
+    try {
+      const stats = await AITrainingService.getBackupStats();
+      setBackupStats(stats);
+    } catch (e) {
+      console.warn('Failed to load backup stats:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'backup_zip') {
+      loadBackupStats();
+    }
+  }, [activeTab]);
+
+  const handleExportBackupZip = () => {
+    setIsExportingBackupZip(true);
+    try {
+      AITrainingService.downloadBackupZip(currentUser);
+      setGuideSuccessMsg(
+        language === 'hi'
+          ? 'फोटो बैकअप ZIP डाउनलोड शुरू हो गया है!'
+          : 'Data & reference photo backup ZIP download started!'
+      );
+      setTimeout(() => setGuideSuccessMsg(null), 4000);
+    } catch (err: any) {
+      setGuideErrorMsg(err.message || 'Failed to export backup ZIP');
+    } finally {
+      setIsExportingBackupZip(false);
+    }
+  };
+
+  const handleExportProjectZip = () => {
+    setIsExportingProjectZip(true);
+    try {
+      AITrainingService.downloadProjectZip(currentUser);
+      setGuideSuccessMsg(
+        language === 'hi'
+          ? 'पोर्टेबल प्रोजेक्ट ZIP डाउनलोड शुरू हो गया है! इसमें सभी कोड और अपलोड की गई फोटो शामिल हैं।'
+          : 'Portable project ZIP download started! Includes all code, database, and uploaded reference photos.'
+      );
+      setTimeout(() => setGuideSuccessMsg(null), 5000);
+    } catch (err: any) {
+      setGuideErrorMsg(err.message || 'Failed to export project ZIP');
+    } finally {
+      setIsExportingProjectZip(false);
+    }
+  };
+
+  const handleFileSelectForRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setRestoreZipFile(file);
+      setRestoreConfirmOpen(true);
+    }
+  };
+
+  const handleConfirmRestoreZip = async () => {
+    if (!restoreZipFile) return;
+    setIsRestoringZip(true);
+    setRestoreStatusMsg(null);
+    try {
+      const res = await AITrainingService.restoreFromZip(restoreZipFile, currentUser);
+      setRestoreStatusMsg({
+        type: 'success',
+        text:
+          language === 'hi'
+            ? `सफलतापूर्वक ${res.restoredReference} संदर्भ फोटो और डेटाबेस रिकॉर्ड पुनर्स्थापित किए गए!`
+            : `Successfully restored ${res.restoredReference} reference photos and database records from ZIP!`,
+      });
+      setRestoreConfirmOpen(false);
+      setRestoreZipFile(null);
+      await loadBackupStats();
+      onRefreshData();
+    } catch (err: any) {
+      setRestoreStatusMsg({
+        type: 'error',
+        text: err.message || 'Failed to restore ZIP archive',
+      });
+    } finally {
+      setIsRestoringZip(false);
+      if (restoreFileInputRef.current) restoreFileInputRef.current.value = '';
     }
   };
 
@@ -336,7 +456,8 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
       }
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Failed to upload photos. Ensure Admin permissions.');
+      setGuideErrorMsg(err.message || 'Failed to upload photos. Ensure Admin permissions.');
+      setTimeout(() => setGuideErrorMsg(null), 5000);
     } finally {
       setIsUploadingMultiple(false);
       setUploadProgressMsg(null);
@@ -364,11 +485,12 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         setTimeout(() => setGuideSuccessMsg(null), 3000);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to set primary photo');
+      setGuideErrorMsg(err.message || 'Failed to set primary photo');
+      setTimeout(() => setGuideErrorMsg(null), 5000);
     }
   };
 
-  // Replace single photo
+  // Replace single photo (opens confirmation modal first)
   const handleStartReplace = (photoId: string) => {
     setReplacingPhotoId(photoId);
     if (replaceInputRef.current) {
@@ -381,17 +503,40 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
     const file = e.target.files?.[0];
     if (!file || !replacingPhotoId || !selectedGuide) return;
 
-    setIsReplacing(true);
     try {
       const base64 = await fileToDataUrl(file);
       const existing = roomPhotos.find((p) => p.id === replacingPhotoId);
 
-      const res = await AITrainingService.replaceRoomPhotoItem({
+      setPendingPhotoUpdate({
         category: selectedGuide.category,
         photoId: replacingPhotoId,
-        photoBase64: base64,
+        currentPhotoUrl: existing?.url,
+        newPhotoPreview: base64,
+        roomName: language === 'hi' ? selectedGuide.titleHi : selectedGuide.titleEn,
         captionHi: existing?.captionHi,
         captionEn: existing?.captionEn,
+      });
+    } catch (err: any) {
+      setGuideErrorMsg(err.message || 'Failed to process replacement image');
+      setTimeout(() => setGuideErrorMsg(null), 5000);
+    } finally {
+      if (replaceInputRef.current) replaceInputRef.current.value = '';
+      setReplacingPhotoId(null);
+    }
+  };
+
+  // Execute confirmed photo update and archive previous photo permanently
+  const handleExecutePhotoUpdate = async () => {
+    if (!pendingPhotoUpdate || !selectedGuide) return;
+    setIsReplacing(true);
+    setGuideErrorMsg(null);
+    try {
+      const res = await AITrainingService.replaceRoomPhotoItem({
+        category: pendingPhotoUpdate.category,
+        photoId: pendingPhotoUpdate.photoId,
+        photoBase64: pendingPhotoUpdate.newPhotoPreview,
+        captionHi: pendingPhotoUpdate.captionHi,
+        captionEn: pendingPhotoUpdate.captionEn,
         user: currentUser,
       });
 
@@ -400,17 +545,18 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         StorageService.setRoomPhotos(selectedGuide.category, res.photos);
         setGuideSuccessMsg(
           language === 'hi'
-            ? 'फोटो सफलतापूर्वक बदल दिया गया और स्थायी रूप से सहेज लिया गया!'
-            : 'Photo successfully replaced and saved permanently!'
+            ? 'संदर्भ फोटो सफलतापूर्वक बदल दी गई और पुरानी फोटो इतिहास में सुरक्षित कर ली गई!'
+            : 'Reference photo successfully replaced! Previous version preserved in Date-Wise History.'
         );
         onRefreshData();
-        setTimeout(() => setGuideSuccessMsg(null), 3000);
+        setTimeout(() => setGuideSuccessMsg(null), 4000);
       }
+      setPendingPhotoUpdate(null);
     } catch (err: any) {
-      alert(err.message || 'Failed to replace photo');
+      setGuideErrorMsg(err.message || 'Failed to replace photo');
+      setTimeout(() => setGuideErrorMsg(null), 5000);
     } finally {
       setIsReplacing(false);
-      setReplacingPhotoId(null);
     }
   };
 
@@ -524,7 +670,8 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         setEditingCaptionId(null);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to update caption');
+      setGuideErrorMsg(err.message || 'Failed to update caption');
+      setTimeout(() => setGuideErrorMsg(null), 5000);
     }
   };
 
@@ -532,11 +679,12 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   const handleRunAIAnalysis = async () => {
     if (!selectedGuide) return;
     if (roomPhotos.length === 0) {
-      alert(
+      setGuideErrorMsg(
         language === 'hi'
           ? 'कृपया विश्लेषण से पहले कम से कम एक संदर्भ फोटो अपलोड करें।'
           : 'Please upload at least one reference photo before triggering AI analysis.'
       );
+      setTimeout(() => setGuideErrorMsg(null), 5000);
       return;
     }
 
@@ -764,6 +912,16 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => setActiveTab('backup_zip')}
+          className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer min-h-[40px] ${
+            activeTab === 'backup_zip' ? 'bg-purple-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <FileArchive className="w-4 h-4 text-purple-300" />
+          <span>{language === 'hi' ? 'बैकअप व ZIP पोर्टेबिलिटी' : 'Backup & ZIP Portability'}</span>
+        </button>
       </div>
 
       {/* ======================================================== */}
@@ -835,6 +993,15 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
             <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               <span>{guideSuccessMsg}</span>
+            </div>
+          )}
+          {guideErrorMsg && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                <span>{guideErrorMsg}</span>
+              </div>
+              <button type="button" onClick={() => setGuideErrorMsg(null)} className="text-rose-600 hover:text-rose-800 text-sm font-bold">✕</button>
             </div>
           )}
 
@@ -2036,6 +2203,256 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         </div>
       )}
 
+      {/* ======================================================== */}
+      {/* TAB 5: BACKUP & ZIP PORTABILITY SYSTEM                   */}
+      {/* ======================================================== */}
+      {activeTab === 'backup_zip' && (
+        <div className="space-y-6 animate-in fade-in">
+          {/* Header Card */}
+          <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 rounded-2xl p-5 sm:p-6 text-white shadow-lg border border-purple-800/40">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-3 bg-purple-500/20 border border-purple-400/30 rounded-xl text-purple-300">
+                  <Archive className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black leading-tight">
+                    {language === 'hi' ? 'स्थायी फोटो बैकअप व प्रोजेक्ट पोर्टेबिलिटी केंद्र' : 'Permanent Photo Storage & Project Portability Hub'}
+                  </h3>
+                  <p className="text-xs text-purple-200 mt-1 max-w-2xl leading-relaxed">
+                    {language === 'hi'
+                      ? 'सभी कमरे की संदर्भ फोटो डेटा/अपलोड/संदर्भ/ में स्थायी रूप से सहेजी जाती हैं। परियोजना को दूसरे कंप्यूटर पर स्थानांतरित करने के लिए संपूर्ण ZIP डाउनलोड या रीस्टोर करें।'
+                      : 'All room reference photos are stored permanently in data/uploads/reference/. Download complete project ZIP or restore data on any computer.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadBackupStats}
+                  className="px-3 py-2 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-700 text-xs font-bold text-purple-200 cursor-pointer flex items-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{language === 'hi' ? 'आँकड़े रिफ्रेश करें' : 'Refresh Stats'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {restoreStatusMsg && (
+            <div className={`p-4 rounded-xl text-xs font-bold flex items-center justify-between border ${
+              restoreStatusMsg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}>
+              <div className="flex items-center gap-2">
+                {restoreStatusMsg.type === 'success' ? <FolderCheck className="w-5 h-5 text-emerald-600" /> : <AlertCircle className="w-5 h-5 text-rose-600" />}
+                <span>{restoreStatusMsg.text}</span>
+              </div>
+              <button type="button" onClick={() => setRestoreStatusMsg(null)} className="text-xs font-bold">✕</button>
+            </div>
+          )}
+
+          {/* Stats Dashboard Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-1">
+              <div className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <HardDrive className="w-3.5 h-3.5 text-blue-600" />
+                <span>{language === 'hi' ? 'सर्वर पर फोटो' : 'Reference Photos on Disk'}</span>
+              </div>
+              <div className="text-2xl font-black text-slate-900">
+                {backupStats?.referencePhotosOnDisk ?? '...'}
+              </div>
+              <div className="text-[11px] text-slate-500 font-medium">
+                {backupStats ? `${backupStats.referenceDiskSizeMb} MB in data/uploads/reference/` : 'Calculating...'}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-1">
+              <div className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{language === 'hi' ? 'सक्रिय मुख्य फोटो' : 'Current Primary Standards'}</span>
+              </div>
+              <div className="text-2xl font-black text-emerald-700">
+                {backupStats?.currentStandardsCount ?? '...'}
+              </div>
+              <div className="text-[11px] text-slate-500 font-medium">
+                {language === 'hi' ? 'सभी 15 कमरों के मुख्य फोटो' : 'Active standards across 15 rooms'}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-1">
+              <div className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <History className="w-3.5 h-3.5 text-amber-600" />
+                <span>{language === 'hi' ? 'इतिहास संस्करण' : 'Archived Photo Versions'}</span>
+              </div>
+              <div className="text-2xl font-black text-amber-600">
+                {backupStats?.archivedPhotosCount ?? '...'}
+              </div>
+              <div className="text-[11px] text-slate-500 font-medium">
+                {language === 'hi' ? 'पुराने अपडेटेड फोटो सहेजे गए' : 'Preserved date-wise history'}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-1">
+              <div className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <FileArchive className="w-3.5 h-3.5 text-purple-600" />
+                <span>{language === 'hi' ? 'प्रमाणित कमरे' : 'Total Configured Rooms'}</span>
+              </div>
+              <div className="text-2xl font-black text-purple-700">
+                {backupStats?.totalRoomsCount ?? '15'}
+              </div>
+              <div className="text-[11px] text-slate-500 font-medium">
+                100% permanent local storage
+              </div>
+            </div>
+          </div>
+
+          {/* Export & Backup Action Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            
+            {/* Card 1: Runnable Project ZIP Export */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-purple-100 text-purple-700">
+                    <FileArchive className="w-5 h-5" />
+                  </div>
+                  <h4 className="font-extrabold text-slate-900 text-base">
+                    {language === 'hi' ? 'संपूर्ण पोर्टेबल प्रोजेक्ट ZIP डाउनलोड करें' : 'Download Complete Runnable Project ZIP'}
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {language === 'hi'
+                    ? 'इसमें संपूर्ण स्रोत कोड, डेटाबेस फ़ाइलें और सभी वास्तविक संदर्भ फ़ोटो (data/uploads/reference/) शामिल हैं। दूसरे कंप्यूटर पर निकालने और npm run dev चलाने पर सभी फ़ोटो स्वचालित रूप से लोड होंगी।'
+                    : 'Includes complete source code, database JSON files, and all physical reference photo files (data/uploads/reference/). Extracts ready to run on any device with npm run dev.'}
+                </p>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 space-y-1">
+                  <div className="font-bold text-slate-900 flex items-center gap-1">
+                    <FolderCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Included in ZIP export:</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                    <li>All 15 room categories & metadata records</li>
+                    <li>76+ physical reference photos in data/uploads/reference/</li>
+                    <li>Task completion proof photos</li>
+                    <li>Complete source code, types, and server setup</li>
+                  </ul>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={isExportingProjectZip}
+                onClick={handleExportProjectZip}
+                className="w-full py-3 px-4 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-black text-xs transition-colors shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                <span>
+                  {isExportingProjectZip
+                    ? (language === 'hi' ? 'प्रोजेक्ट ZIP बन रहा है...' : 'Generating Project ZIP...')
+                    : (language === 'hi' ? 'पोर्टेबल प्रोजेक्ट ZIP डाउनलोड करें' : 'Export Runnable Project ZIP')}
+                </span>
+              </button>
+            </div>
+
+            {/* Card 2: Restore / Import ZIP Backup */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                    <HardDrive className="w-5 h-5" />
+                  </div>
+                  <h4 className="font-extrabold text-slate-900 text-base">
+                    {language === 'hi' ? 'बैकअप ZIP रीस्टोर/इम्पोर्ट करें' : 'Restore Data & Photos from ZIP'}
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {language === 'hi'
+                    ? 'किसी भी पहले डाउनलोड किए गए फोटो या प्रोजेक्ट बैकअप ZIP को चुनकर सर्वर पर रीस्टोर करें। सभी फोटो लिंक और डेटाबेस स्वचालित रूप से सिंक हो जाएंगे।'
+                    : 'Select any previously exported backup or project ZIP archive to restore reference photos and database files on this server without losing photo links.'}
+                </p>
+                <input
+                  type="file"
+                  ref={restoreFileInputRef}
+                  accept=".zip"
+                  onChange={handleFileSelectForRestore}
+                  className="hidden"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => restoreFileInputRef.current?.click()}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs transition-colors shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-amber-400" />
+                  <span>{language === 'hi' ? 'रीस्टोर के लिए ZIP फ़ाइल चुनें' : 'Select ZIP File to Restore'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isExportingBackupZip}
+                  onClick={handleExportBackupZip}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{language === 'hi' ? 'केवल फोटो व डेटा ZIP डाउनलोड करें' : 'Export Photos & Data Only ZIP'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Restore Confirmation Modal */}
+          {restoreConfirmOpen && restoreZipFile && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200 p-6 space-y-4">
+                <div className="flex items-center gap-3 text-purple-700">
+                  <FileArchive className="w-8 h-8" />
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      {language === 'hi' ? 'ZIP रीस्टोर की पुष्टि करें' : 'Confirm ZIP Archive Restore'}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">{restoreZipFile.name}</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {language === 'hi'
+                    ? 'यह प्रक्रिया चुने गए ZIP से सभी संदर्भ फोटो और डेटाबेस रिकॉर्ड पुनर्स्थापित करेगी। वर्तमान फोटो सुरक्षित रहेंगी।'
+                    : 'This operation will extract and restore all reference photo files and database records into data/uploads/reference/. Existing photos will be preserved.'}
+                </p>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    disabled={isRestoringZip}
+                    onClick={() => {
+                      setRestoreConfirmOpen(false);
+                      setRestoreZipFile(null);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                  >
+                    {language === 'hi' ? 'रद्द करें' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isRestoringZip}
+                    onClick={handleConfirmRestoreZip}
+                    className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black shadow-md cursor-pointer disabled:opacity-50"
+                  >
+                    {isRestoringZip
+                      ? (language === 'hi' ? 'रीस्टोर हो रहा है...' : 'Restoring...')
+                      : (language === 'hi' ? 'हां, रीस्टोर शुरू करें' : 'Confirm & Restore')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      )}
+
       {/* Completion Photo Lightbox Modal */}
       {previewCompletionPhoto && (
         <div
@@ -2318,6 +2735,23 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         photoUrl={deleteCompletionTarget?.photoUrl}
         roomName={deleteCompletionTarget?.roomName}
         error={deleteCompletionError}
+      />
+
+      {/* Update Reference Photo Confirmation Modal */}
+      <UpdatePhotoConfirmModal
+        isOpen={pendingPhotoUpdate !== null}
+        onClose={() => {
+          if (!isReplacing) {
+            setPendingPhotoUpdate(null);
+          }
+        }}
+        onConfirm={handleExecutePhotoUpdate}
+        isUpdating={isReplacing}
+        language={language}
+        roomName={pendingPhotoUpdate?.roomName}
+        currentPhotoUrl={pendingPhotoUpdate?.currentPhotoUrl}
+        newPhotoPreview={pendingPhotoUpdate?.newPhotoPreview}
+        currentCaption={language === 'hi' ? pendingPhotoUpdate?.captionHi : pendingPhotoUpdate?.captionEn}
       />
 
       {/* Date-Wise Room Reference Photo History Modal */}

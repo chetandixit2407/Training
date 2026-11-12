@@ -1,0 +1,69 @@
+[
+  {
+    "id": "test-task-1",
+    "title": "Morning Reception Cleaning",
+    "roomName": "Reception Area",
+    "status": "completed",
+    "completedAt": "2026-11-05T08:19:26.956Z",
+    "completedByUserId": "pb-101",
+    "completedByUserName": "Ramesh Kumar",
+    "afterPhotoUrl": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png",
+    "proofPhotos": [
+      {
+        "id": "proof_test-task-1_1793866766957_1_mf0n",
+        "taskId": "test-task-1",
+        "taskTitle": "Morning Reception Cleaning",
+        "roomName": "Reception Area",
+        "url": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png",
+        "fileName": "task_test-task-1_comp_2_1793866766956_dexg.png",
+        "uploadedAt": "2026-11-05T08:19:26.956Z",
+        "expiresAt": "2026-12-15T08:19:26.956Z",
+        "pantryBoyId": "pb-101",
+        "pantryBoyName": "Ramesh Kumar",
+        "angleLabel": "Angle 2: Visitor Sofa",
+        "caption": "",
+        "retentionDays": 40
+      }
+    ],
+    "notes": "Table polished, 2 fresh bottles kept, cushions aligned",
+    "proofPhotoUrl": "/uploads/completion/task_test-task-1_comp_2_1793866766956_dexg.png"
+  },
+  {
+    "id": "test-task-2",
+    "title": "Boardroom Meeting Setup",
+    "titleEn": "Boardroom Meeting Setup",
+    "titleHi": "Boardroom Meeting Setup",
+    "roomName": "The Summit",
+    "roomNameEn": "The Summit",
+    "roomNameHi": "The Summit",
+    "status": "completed",
+    "completedAt": "2026-11-05T10:32:37.236Z",
+    "completedByUserId": "pb-101",
+    "completedByName": "Ramesh Kumar",
+    "completedByUserName": "Ramesh Kumar",
+    "proofPhotos": [],
+    "boyNotes": "Table wiped",
+    "notes": "Table wiped",
+    "afterPhotoUrl": null,
+    "proofPhotoUrl": null
+  },
+  {
+    "id": "e2e_test_task",
+    "title": "E2E Task",
+    "titleEn": "E2E Task",
+    "titleHi": "E2E Task",
+    "roomName": "E2E Room",
+    "roomNameEn": "E2E Room",
+    "roomNameHi": "E2E Room",
+    "status": "completed",
+    "completedAt": "2026-11-12T05:56:20.495Z",
+    "completedByUserId": "pb-101",
+    "completedByName": "Ramesh",
+    "completedByUserName": "Ramesh",
+    "proofPhotoUrl": null,
+    "afterPhotoUrl": null,
+    "proofPhotos": [],
+    "boyNotes": "",
+    "notes": ""
+  }
+]

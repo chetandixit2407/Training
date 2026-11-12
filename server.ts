@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import AdmZip from 'adm-zip';
+import { createPortableZip } from './scripts/export-project-zip.js';
 import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
@@ -90,23 +92,73 @@ app.use('/uploads/reference', express.static(REFERENCE_UPLOADS_DIR));
 app.use('/uploads/completion', express.static(COMPLETION_UPLOADS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// On-demand restore from backupDataUrl if physical file is missing on disk, otherwise explicit 404
+// On-demand self-healing restore for reference and completion photos
 app.use('/uploads', (req, res) => {
   try {
     const cleanPath = req.path.split('?')[0];
     const filename = path.basename(cleanPath);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+
     if (filename && filename !== '.' && filename !== '/') {
       if (req.originalUrl.startsWith('/uploads/reference/')) {
-        loadRoomPhotos();
         const restoredPath = path.join(REFERENCE_UPLOADS_DIR, filename);
         if (fs.existsSync(restoredPath)) {
           return res.sendFile(restoredPath);
         }
+
+        // 1. Search data/room_photos.json for matching backupDataUrl
+        const photosMap = loadRoomPhotos();
+        for (const cat in photosMap) {
+          const match = (photosMap[cat] || []).find(
+            (p: any) => p.fileName === filename || (p.url && p.url.includes(filename))
+          );
+          if (match && match.backupDataUrl && typeof match.backupDataUrl === 'string' && match.backupDataUrl.startsWith('data:image/')) {
+            const m = match.backupDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
+            if (m) {
+              fs.writeFileSync(restoredPath, Buffer.from(m[2].trim(), 'base64'));
+              return res.sendFile(restoredPath);
+            }
+          }
+        }
+
+        // 2. Fallback to room canonical photo if category is identifiable
+        const matchCat = filename.match(/^(?:ref|reference|incorrect)_(.+?)(?:_\d+|[._])/i);
+        const cat = matchCat ? normalizeRoomCategory(matchCat[1]) : '';
+        if (cat) {
+          const canonical = path.join(REFERENCE_UPLOADS_DIR, `ref_${cat}_canonical.jpg`);
+          if (fs.existsSync(canonical)) {
+            try {
+              fs.copyFileSync(canonical, restoredPath);
+            } catch {}
+            return res.sendFile(canonical);
+          }
+        }
+
+        // 3. Fallback to any canonical photo in REFERENCE_UPLOADS_DIR
+        const anyCanonical = fs.readdirSync(REFERENCE_UPLOADS_DIR).find((f) => f.endsWith('_canonical.jpg'));
+        if (anyCanonical) {
+          const fullPath = path.join(REFERENCE_UPLOADS_DIR, anyCanonical);
+          return res.sendFile(fullPath);
+        }
       } else if (req.originalUrl.startsWith('/uploads/completion/')) {
-        loadCompletionPhotos();
         const restoredPath = path.join(COMPLETION_UPLOADS_DIR, filename);
         if (fs.existsSync(restoredPath)) {
           return res.sendFile(restoredPath);
+        }
+
+        // Search completion_photos.json for matching backupDataUrl
+        const complList = loadCompletionPhotos();
+        const match = complList.find(
+          (p: any) => p.fileName === filename || (p.url && p.url.includes(filename))
+        );
+        if (match && match.backupDataUrl && typeof match.backupDataUrl === 'string' && match.backupDataUrl.startsWith('data:image/')) {
+          const m = match.backupDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
+          if (m) {
+            fs.writeFileSync(restoredPath, Buffer.from(m[2].trim(), 'base64'));
+            return res.sendFile(restoredPath);
+          }
         }
       }
     }
@@ -970,11 +1022,71 @@ const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
   pantry: [],
   lights_equipment: [],
   workstations: [],
-  kitchen_area: [],
-  employee_desk_area: [],
-  pool_area: [],
-  light_combination_visitor: [],
-  light_combination_employee: [],
+  kitchen_area: [
+    {
+      id: 'photo_kitchen_area_1',
+      url: '/uploads/reference/ref_kitchen_area_canonical.jpg',
+      fileName: 'ref_kitchen_area_canonical.jpg',
+      captionHi: 'किचन एरिया: साफ काउंटरटॉप, कॉफी मशीन, व्यवस्थित क्रॉकरी व स्वच्छ सिंक व्यवस्था',
+      captionEn: 'Kitchen Area: Spotless stainless counters, espresso machine, clean glasses, and tidy racks',
+      uploadedAt: '2026-11-11T12:46:00Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  employee_desk_area: [
+    {
+      id: 'photo_employee_desk_area_1',
+      url: '/uploads/reference/ref_employee_desk_area_canonical.jpg',
+      fileName: 'ref_employee_desk_area_canonical.jpg',
+      captionHi: 'एम्प्लॉई डेस्क एरिया: सीधी कुर्सियां, साफ मॉनिटर, व्यवस्थित केबल व स्वच्छ फर्श',
+      captionEn: 'Employee Desk Area: Aligned ergonomic chairs, dusted monitors, clean cable routing, and tidy workstations',
+      uploadedAt: '2026-11-11T12:46:10Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  pool_area: [
+    {
+      id: 'photo_pool_area_1',
+      url: '/uploads/reference/ref_pool_area_canonical.jpg',
+      fileName: 'ref_pool_area_canonical.jpg',
+      captionHi: 'पूल एरिया: व्यवस्थित क्यू रैक, साफ फेल्ट, बॉल्स रैक में व आसपास की सीटिंग व्यवस्थित',
+      captionEn: 'Pool Area: Tournament-standard clean table, cue sticks in rack, arranged balls, and tidy lounge seating',
+      uploadedAt: '2026-11-11T12:46:20Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  light_combination_visitor: [
+    {
+      id: 'photo_light_combination_visitor_1',
+      url: '/uploads/reference/ref_light_combination_visitor_canonical.jpg',
+      fileName: 'ref_light_combination_visitor_canonical.jpg',
+      captionHi: 'विजिटर/क्लाइंट मोड: रिसेप्शन लोगो बैकलाइट, मीटिंग रूम वॉर्म लाइट्स व फोकस डाउनलाइट्स चालू',
+      captionEn: 'Visitor/Client Mode: Reception logo backlight, warm meeting room downlights, and ambient perimeter wash',
+      uploadedAt: '2026-11-11T12:46:30Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
+  light_combination_employee: [
+    {
+      id: 'photo_light_combination_employee_1',
+      url: '/uploads/reference/ref_light_combination_employee_canonical.jpg',
+      fileName: 'ref_light_combination_employee_canonical.jpg',
+      captionHi: 'एम्प्लॉई मोड: 4500K संतुलित वर्कस्टेशन लाइट्स चालू, खाली मीटिंग रूम्स की लाइटें बंद',
+      captionEn: 'Employee Mode: 4500K balanced linear task lighting over desks, lights OFF in unused meeting spaces',
+      uploadedAt: '2026-11-11T12:46:40Z',
+      uploadedBy: 'Admin (Chetan)',
+      isPrimary: true,
+      photoType: 'reference',
+    },
+  ],
 };
 
 // Canonical Room Category Normalizer
@@ -1115,8 +1227,9 @@ function loadRoomPhotos(): Record<string, any[]> {
           hasChanges = true;
         });
 
-        if (list.length > 0 && !list.some((p) => p.isPrimary)) {
-          list[0].isPrimary = true;
+        const activePhotos = list.filter((p) => p.isCurrent !== false);
+        if (activePhotos.length > 0 && !activePhotos.some((p) => p.isPrimary)) {
+          activePhotos[0].isPrimary = true;
           hasChanges = true;
         }
         photosMap[normCat] = list;
@@ -1716,6 +1829,115 @@ app.post('/api/photos/replace-item', requireAdmin, (req, res) => {
   const category = req.body?.category || req.query?.category || '';
   const photoId = req.body?.photoId || req.query?.photoId || '';
   executePhotoReplacement(category, photoId, req, res);
+});
+
+// Helper function to restore an archived photo to be current & primary
+function executePhotoRestore(category: string, photoId: string, req: express.Request, res: express.Response) {
+  try {
+    const rawCat = (category || req.body?.category || req.query?.category || '').toString().trim();
+    const normCat = normalizeRoomCategory(rawCat);
+    const decodedId = decodeURIComponent(photoId || '');
+    const targetUrl = (req.body?.url || req.query?.url || '').toString().trim();
+    const targetPhotoId = (req.body?.photoId || req.query?.photoId || photoId || '').toString().trim();
+
+    const allRoomPhotos = loadRoomPhotos();
+    let catKey = Object.keys(allRoomPhotos).find((k) => normalizeRoomCategory(k) === normCat) || normCat;
+    let list = allRoomPhotos[catKey] || allRoomPhotos[normCat] || [];
+
+    // Match photo by id or url or filename
+    let idx = list.findIndex((p) => {
+      if (p.id && (p.id === targetPhotoId || p.id === photoId || p.id === decodedId)) return true;
+      if (p.url && (p.url === targetPhotoId || p.url === photoId || p.url === decodedId || p.url === targetUrl)) return true;
+      const baseP = path.basename(p.url || '');
+      const baseTarget = path.basename(targetPhotoId || photoId || decodedId || targetUrl || '');
+      if (baseP && baseTarget && baseP === baseTarget) return true;
+      return false;
+    });
+
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Photo not found in room archive' });
+    }
+
+    const now = new Date().toISOString();
+    const adminName = (req.body?.adminName || req.headers['x-user-name'] || 'Admin') as string;
+
+    // Reset primary on any other photo in this room
+    list.forEach((p, i) => {
+      if (i !== idx) {
+        p.isPrimary = false;
+      }
+    });
+
+    // Mark restored photo as current and primary
+    const target = list[idx];
+    target.isCurrent = true;
+    target.isPrimary = true;
+    target.restoredAt = now;
+    target.restoredBy = adminName;
+    delete target.archivedAt;
+    delete target.archivedBy;
+
+    allRoomPhotos[catKey] = list;
+    saveRoomPhotos(allRoomPhotos);
+
+    const currentList = list.filter((p) => p.isCurrent !== false);
+    const restoredUrl = target.url;
+
+    // Sync Knowledge Base
+    const records = loadKnowledgeBase();
+    const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
+    if (kb) {
+      kb.referencePhotoUrl = restoredUrl;
+      kb.updatedAt = now;
+      saveKnowledgeBase(records);
+    }
+
+    // Sync Guides
+    const guides = loadGuides();
+    const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
+    if (g) {
+      g.photoUrl = restoredUrl;
+      g.photos = stripBackupField(currentList);
+      g.updatedAt = now;
+      saveGuides(guides);
+    }
+
+    // Sync Tasks
+    const tasks = loadTasks();
+    let tasksChanged = false;
+    tasks.forEach((t: any) => {
+      if (normalizeRoomCategory(t.roomCategory) === normCat) {
+        t.referencePhotoUrl = restoredUrl;
+        tasksChanged = true;
+      }
+    });
+    if (tasksChanged) {
+      saveTasks(tasks);
+    }
+
+    console.log(`[PHOTO_RESTORE_SUCCESS] Restored photo ${target.fileName || target.id} as current primary in ${normCat} by ${adminName}`);
+
+    res.json({
+      success: true,
+      message: 'Photo restored successfully as current primary reference photo',
+      photos: stripBackupField(currentList),
+      restoredPhoto: stripBackupField([target])[0],
+    });
+  } catch (err: any) {
+    console.error('Error restoring photo:', err);
+    res.status(500).json({ error: err.message || 'Failed to restore photo' });
+  }
+}
+
+// 7. RESTORE ARCHIVED PHOTO (Admin only)
+app.post('/api/photos/room/:category/item/:photoId/restore', requireAdmin, (req, res) => {
+  executePhotoRestore(req.params.category, req.params.photoId, req, res);
+});
+
+app.post('/api/photos/restore-item', requireAdmin, (req, res) => {
+  const category = req.body?.category || req.query?.category || '';
+  const photoId = req.body?.photoId || req.query?.photoId || '';
+  executePhotoRestore(category, photoId, req, res);
 });
 
 // Helper function to execute photo deletion and full database synchronization
@@ -2774,6 +2996,248 @@ app.get('/api/audit/deletions', requireAdmin, (req, res) => {
   }
 });
 
+// ==========================================
+// BACKUP & ZIP PORTABILITY SYSTEM
+// ==========================================
+
+// 1. Get Backup Statistics
+app.get('/api/backup/stats', (req, res) => {
+  try {
+    const allRoomPhotos = loadRoomPhotos();
+    let refPhotosOnDisk = 0;
+    let refDiskBytes = 0;
+    if (fs.existsSync(REFERENCE_UPLOADS_DIR)) {
+      const files = fs.readdirSync(REFERENCE_UPLOADS_DIR).filter((f) => /\.(jpg|jpeg|png|webp|gif)$/i.test(f));
+      refPhotosOnDisk = files.length;
+      files.forEach((f) => {
+        try {
+          refDiskBytes += fs.statSync(path.join(REFERENCE_UPLOADS_DIR, f)).size;
+        } catch {}
+      });
+    }
+
+    let compPhotosOnDisk = 0;
+    let compDiskBytes = 0;
+    if (fs.existsSync(COMPLETION_UPLOADS_DIR)) {
+      const files = fs.readdirSync(COMPLETION_UPLOADS_DIR).filter((f) => /\.(jpg|jpeg|png|webp|gif)$/i.test(f));
+      compPhotosOnDisk = files.length;
+      files.forEach((f) => {
+        try {
+          compDiskBytes += fs.statSync(path.join(COMPLETION_UPLOADS_DIR, f)).size;
+        } catch {}
+      });
+    }
+
+    let dbPhotosCount = 0;
+    let currentStandardsCount = 0;
+    let archivedPhotosCount = 0;
+    Object.values(allRoomPhotos).forEach((list) => {
+      (list || []).forEach((p) => {
+        dbPhotosCount++;
+        if (p.isCurrent !== false) currentStandardsCount++;
+        else archivedPhotosCount++;
+      });
+    });
+
+    res.json({
+      success: true,
+      referencePhotosOnDisk: refPhotosOnDisk,
+      referenceDiskSizeMb: (refDiskBytes / (1024 * 1024)).toFixed(2),
+      completionPhotosOnDisk: compPhotosOnDisk,
+      completionDiskSizeMb: (compDiskBytes / (1024 * 1024)).toFixed(2),
+      databasePhotosCount: dbPhotosCount,
+      currentStandardsCount,
+      archivedPhotosCount,
+      totalRoomsCount: Object.keys(allRoomPhotos).length,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch backup stats' });
+  }
+});
+
+// 2. Export Data & Reference Photos Backup ZIP
+app.get('/api/backup/export-zip', (req, res) => {
+  try {
+    const zip = new AdmZip();
+
+    const jsonFiles = [
+      'room_photos.json',
+      'visual_guides.json',
+      'training_knowledge.json',
+      'completion_photos.json',
+      'deletion_audit_logs.json',
+      'tasks.json',
+      'room_analysis.json',
+    ];
+
+    let jsonFilesAdded = 0;
+    jsonFiles.forEach((file) => {
+      const fullPath = path.join(DATA_DIR, file);
+      if (fs.existsSync(fullPath)) {
+        zip.addLocalFile(fullPath, 'data');
+        jsonFilesAdded++;
+      }
+    });
+
+    let referencePhotosAdded = 0;
+    if (fs.existsSync(REFERENCE_UPLOADS_DIR)) {
+      const files = fs.readdirSync(REFERENCE_UPLOADS_DIR);
+      files.forEach((file) => {
+        const fullPath = path.join(REFERENCE_UPLOADS_DIR, file);
+        if (fs.statSync(fullPath).isFile()) {
+          zip.addLocalFile(fullPath, 'data/uploads/reference');
+          referencePhotosAdded++;
+        }
+      });
+    }
+
+    let completionPhotosAdded = 0;
+    if (fs.existsSync(COMPLETION_UPLOADS_DIR)) {
+      const files = fs.readdirSync(COMPLETION_UPLOADS_DIR);
+      files.forEach((file) => {
+        const fullPath = path.join(COMPLETION_UPLOADS_DIR, file);
+        if (fs.statSync(fullPath).isFile()) {
+          zip.addLocalFile(fullPath, 'data/uploads/completion');
+          completionPhotosAdded++;
+        }
+      });
+    }
+
+    const allRoomPhotos = loadRoomPhotos();
+    const rooms = Object.keys(allRoomPhotos).map((cat) => ({
+      room: cat,
+      photosCount: allRoomPhotos[cat].length,
+      primaryPhoto: (allRoomPhotos[cat].find((p) => p.isPrimary) || allRoomPhotos[cat][0])?.fileName || null,
+    }));
+
+    const manifest = {
+      exportTimestamp: new Date().toISOString(),
+      appletId: '8b08ae5c-a9f1-4dcb-ab7c-e994beefc91f',
+      version: '1.0.0',
+      system: 'Office Operations & AI Training App',
+      referencePhotosCount: referencePhotosAdded,
+      completionPhotosCount: completionPhotosAdded,
+      jsonDatabasesCount: jsonFilesAdded,
+      totalFiles: jsonFilesAdded + referencePhotosAdded + completionPhotosAdded,
+      rooms,
+    };
+    zip.addFile('backup-manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+
+    const zipBuffer = zip.toBuffer();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `office-photos-backup-${dateStr}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    res.send(zipBuffer);
+  } catch (err: any) {
+    console.error('Error exporting backup ZIP:', err);
+    res.status(500).json({ error: err.message || 'Failed to export backup ZIP' });
+  }
+});
+
+// 3. Export Complete Runnable Project ZIP (All code + actual photos + database)
+app.get('/api/backup/export-project-zip', (req, res) => {
+  try {
+    const tempOut = path.join(DATA_DIR, `project-export-${Date.now()}.zip`);
+    createPortableZip(tempOut);
+    const zipBuffer = fs.readFileSync(tempOut);
+    try { fs.unlinkSync(tempOut); } catch {}
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `pantry-app-portable-project-${dateStr}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    res.send(zipBuffer);
+  } catch (err: any) {
+    console.error('Error exporting project ZIP:', err);
+    res.status(500).json({ error: err.message || 'Failed to export project ZIP' });
+  }
+});
+
+// 4. Restore System & Photos from ZIP Archive (Admin only)
+app.post('/api/backup/restore-zip', requireAdmin, (req, res) => {
+  try {
+    let zipBuffer: Buffer | null = null;
+    if (Buffer.isBuffer(req.body)) {
+      zipBuffer = req.body;
+    } else if (req.body?.zipBase64) {
+      const match = req.body.zipBase64.match(/base64,(.+)$/);
+      const cleanBase64 = match ? match[1] : req.body.zipBase64;
+      zipBuffer = Buffer.from(cleanBase64, 'base64');
+    }
+
+    if (!zipBuffer || zipBuffer.length === 0) {
+      return res.status(400).json({ error: 'Valid ZIP archive (buffer or base64) is required for restore' });
+    }
+
+    const zip = new AdmZip(zipBuffer);
+    const entries = zip.getEntries();
+    if (entries.length === 0) {
+      return res.status(400).json({ error: 'Uploaded ZIP file contains no entries' });
+    }
+
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(REFERENCE_UPLOADS_DIR, { recursive: true });
+    fs.mkdirSync(COMPLETION_UPLOADS_DIR, { recursive: true });
+
+    let restoredJson = 0;
+    let restoredReference = 0;
+    let restoredCompletion = 0;
+
+    entries.forEach((entry) => {
+      if (entry.isDirectory) return;
+      const entryName = entry.entryName.replace(/\\/g, '/');
+      const baseName = path.basename(entryName);
+
+      if (baseName.endsWith('.json') && (entryName.startsWith('data/') || !entryName.includes('/'))) {
+        fs.writeFileSync(path.join(DATA_DIR, baseName), entry.getData());
+        restoredJson++;
+      } else if (entryName.includes('uploads/reference/') || entryName.startsWith('reference/')) {
+        fs.writeFileSync(path.join(REFERENCE_UPLOADS_DIR, baseName), entry.getData());
+        restoredReference++;
+      } else if (entryName.includes('uploads/completion/') || entryName.startsWith('completion/')) {
+        fs.writeFileSync(path.join(COMPLETION_UPLOADS_DIR, baseName), entry.getData());
+        restoredCompletion++;
+      }
+    });
+
+    // Re-initialize and sync in-memory records
+    loadRoomPhotos();
+    loadKnowledgeBase();
+    loadGuides();
+    loadTasks();
+    loadCompletionPhotos();
+
+    const adminName = (req.body?.adminName || req.headers['x-user-name'] || 'Admin') as string;
+    recordDeletionAudit({
+      targetType: 'task_proof',
+      targetId: `zip_restore_${Date.now()}`,
+      taskId: 'system_backup',
+      fileName: 'ZIP_RESTORE_OPERATION',
+      storagePath: `data/ (${restoredReference} reference photos, ${restoredCompletion} proofs, ${restoredJson} DBs restored)`,
+      deletedBy: `${adminName} (ZIP Import)`,
+    });
+
+    console.log(`[ZIP_RESTORE_SUCCESS] Restored ${restoredReference} reference photos, ${restoredCompletion} completion proofs, ${restoredJson} DB files`);
+
+    res.json({
+      success: true,
+      message: `Successfully restored ${restoredReference} reference photos and all database records from ZIP!`,
+      restoredReference,
+      restoredCompletion,
+      restoredJson,
+      totalRestoredFiles: restoredReference + restoredCompletion + restoredJson,
+    });
+  } catch (err: any) {
+    console.error('Error during ZIP restore:', err);
+    res.status(500).json({ error: err.message || 'Failed to restore ZIP archive' });
+  }
+});
+
 // Retention status inspection (Audit dashboard for Admin & Staff)
 app.get('/api/completion-photos/retention-status', (req, res) => {
   try {
@@ -3263,6 +3727,27 @@ async function startServer() {
     app.get('*', (req, res) => {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
+  }
+
+  // Ensure all reference photos exist on disk
+  try {
+    loadRoomPhotos();
+    const assetsDir = path.join(__dirname, 'src', 'assets', 'images');
+    if (fs.existsSync(assetsDir)) {
+      const assetFiles = fs.readdirSync(assetsDir);
+      for (const f of assetFiles) {
+        const m = f.match(/^([a-z0-9_]+)_\d+\.jpg$/i);
+        if (m) {
+          const roomKey = m[1];
+          const canonical = path.join(REFERENCE_UPLOADS_DIR, `ref_${roomKey}_canonical.jpg`);
+          if (!fs.existsSync(canonical)) {
+            fs.copyFileSync(path.join(assetsDir, f), canonical);
+          }
+        }
+      }
+    }
+  } catch (seedErr) {
+    console.warn('Startup reference photo sync notice:', seedErr);
   }
 
   server.listen(PORT, '0.0.0.0', () => {

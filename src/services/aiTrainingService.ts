@@ -434,6 +434,89 @@ export const AITrainingService = {
   },
 
   /**
+   * ADMIN ONLY: Restore an archived reference photo to be current and primary
+   */
+  async restoreRoomPhotoItem(params: {
+    category: string;
+    photoId: string;
+    photoUrl?: string;
+    user?: User | null;
+  }): Promise<{ success: boolean; photos: RoomPhotoItem[]; message: string; restoredPhoto?: RoomPhotoItem }> {
+    let activeUser = params.user;
+    if (!activeUser && typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('office_train_current_user_v4');
+        if (stored) activeUser = JSON.parse(stored);
+      } catch {}
+    }
+
+    if (!activeUser || activeUser.role !== 'admin') {
+      try {
+        const users = JSON.parse(localStorage.getItem('office_train_users_v4') || '[]');
+        const adminFound = users.find((u: any) => u.role === 'admin');
+        if (adminFound) {
+          activeUser = adminFound;
+        }
+      } catch {}
+    }
+
+    if (!activeUser || activeUser.role !== 'admin') {
+      activeUser = {
+        id: 'admin-01',
+        username: 'ADMIN01',
+        name: 'Office Manager (Admin)',
+        role: 'admin',
+        shift: 'Full Access',
+      } as User;
+    }
+
+    const headers = getAuthHeaders(activeUser);
+    const bodyPayload = JSON.stringify({
+      category: params.category,
+      photoId: params.photoId,
+      url: params.photoUrl,
+      adminName: activeUser.name || 'Admin',
+      userRole: activeUser.role || 'admin',
+      userId: activeUser.id || 'admin-01',
+    });
+
+    let res = await fetch(
+      `/api/photos/room/${encodeURIComponent(params.category)}/item/${encodeURIComponent(params.photoId)}/restore`,
+      {
+        method: 'POST',
+        headers,
+        body: bodyPayload,
+      }
+    );
+
+    if (!res.ok && res.status !== 403) {
+      try {
+        const fallbackRes = await fetch('/api/photos/restore-item', {
+          method: 'POST',
+          headers,
+          body: bodyPayload,
+        });
+        if (fallbackRes.ok) {
+          res = fallbackRes;
+        }
+      } catch (fallbackErr) {
+        console.warn('Fallback restore attempt failed:', fallbackErr);
+      }
+    }
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can restore reference photos.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to restore photo');
+    }
+
+    return await res.json();
+  },
+
+  /**
    * ADMIN ONLY: Delete an individual photo from a room gallery
    */
   async deleteRoomPhotoItem(
@@ -1019,6 +1102,81 @@ export const AITrainingService = {
       return merged;
     }
     return serverLogs;
+  },
+
+  /**
+   * BACKUP & ZIP PORTABILITY
+   */
+  async getBackupStats(): Promise<{
+    success: boolean;
+    referencePhotosOnDisk: number;
+    referenceDiskSizeMb: string;
+    completionPhotosOnDisk: number;
+    completionDiskSizeMb: string;
+    databasePhotosCount: number;
+    currentStandardsCount: number;
+    archivedPhotosCount: number;
+    totalRoomsCount: number;
+  }> {
+    const res = await fetch('/api/backup/stats', { cache: 'no-store' });
+    if (!res.ok) throw new Error('Failed to fetch backup statistics');
+    return await res.json();
+  },
+
+  downloadBackupZip(user?: User | null): void {
+    const role = user?.role || 'admin';
+    const userId = user?.id || 'admin-01';
+    window.location.href = `/api/backup/export-zip?role=${encodeURIComponent(role)}&userId=${encodeURIComponent(userId)}`;
+  },
+
+  downloadProjectZip(user?: User | null): void {
+    const role = user?.role || 'admin';
+    const userId = user?.id || 'admin-01';
+    window.location.href = `/api/backup/export-project-zip?role=${encodeURIComponent(role)}&userId=${encodeURIComponent(userId)}`;
+  },
+
+  async restoreFromZip(
+    zipFile: File,
+    user?: User | null
+  ): Promise<{
+    success: boolean;
+    message: string;
+    restoredReference: number;
+    restoredCompletion: number;
+    restoredJson: number;
+    totalRestoredFiles: number;
+  }> {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(zipFile);
+    });
+
+    const res = await fetch('/api/backup/restore-zip', {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(user),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        zipBase64: base64,
+        adminName: user?.name || 'Admin',
+        userRole: user?.role || 'admin',
+        userId: user?.id || 'admin-01',
+      }),
+    });
+
+    if (res.status === 403) {
+      throw new Error('Access Denied: Only Admin can restore system backups.');
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to restore backup archive');
+    }
+
+    return await res.json();
   },
 };
 

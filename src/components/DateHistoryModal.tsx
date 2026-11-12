@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Clock, User as UserIcon, Trash2, History, ShieldCheck, Maximize2, FileText } from 'lucide-react';
+import { X, Calendar, Clock, User as UserIcon, Trash2, History, ShieldCheck, Maximize2, FileText, RotateCcw } from 'lucide-react';
 import { Language, User, RoomPhotoItem, CompletionPhotoItem, DeletionAuditLog } from '../types';
 import { AITrainingService } from '../services/aiTrainingService';
 import { CloudPhotoService } from '../services/cloudPhotoService';
@@ -53,8 +53,37 @@ export const DateHistoryModal: React.FC<DateHistoryModalProps> = ({
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState<string | null>(null);
 
   const isAdmin = currentUser?.role === 'admin';
+
+  const handleRestorePhoto = async (p: RoomPhotoItem) => {
+    if (!isAdmin) return;
+    setIsRestoring(true);
+    setDeleteError(null);
+    try {
+      await AITrainingService.restoreRoomPhotoItem({
+        category: p.roomId || roomId || '',
+        photoId: p.id,
+        photoUrl: p.url,
+        user: currentUser,
+      });
+      setRestoreMsg(
+        language === 'hi'
+          ? 'फोटो को वर्तमान संदर्भ मानक के रूप में सफलतापूर्वक पुनर्स्थापित किया गया!'
+          : 'Photo restored as current standard reference photo!'
+      );
+      setTimeout(() => setRestoreMsg(null), 3500);
+      await loadHistory();
+      if (onDeleted) onDeleted();
+    } catch (err: any) {
+      console.error('Failed to restore photo:', err);
+      setDeleteError(err.message || 'Failed to restore photo');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const loadHistory = async () => {
     if (!isOpen) return;
@@ -260,6 +289,18 @@ export const DateHistoryModal: React.FC<DateHistoryModalProps> = ({
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          {restoreMsg && (
+            <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{restoreMsg}</span>
+            </div>
+          )}
+          {deleteError && (
+            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold flex items-center justify-between">
+              <span>{deleteError}</span>
+              <button type="button" onClick={() => setDeleteError(null)} className="text-red-600 hover:text-red-800 font-bold ml-2">✕</button>
+            </div>
+          )}
           {loading ? (
             <div className="py-12 text-center text-sm text-slate-500 font-semibold">
               {language === 'hi' ? 'इतिहास लोड हो रहा है...' : 'Loading permanent history...'}
@@ -337,7 +378,23 @@ export const DateHistoryModal: React.FC<DateHistoryModalProps> = ({
                           </div>
                         </div>
                         {isAdmin && (
-                          <div className="pt-2 mt-2 border-t border-slate-100 flex justify-end">
+                          <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                            {p.isCurrent === false ? (
+                              <button
+                                type="button"
+                                disabled={isRestoring}
+                                onClick={() => handleRestorePhoto(p)}
+                                className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>{language === 'hi' ? 'पुनर्स्थापित करें' : 'Restore'}</span>
+                              </button>
+                            ) : (
+                              <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                <span>{language === 'hi' ? 'सक्रिय मानक' : 'Active Standard'}</span>
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() =>
@@ -350,10 +407,10 @@ export const DateHistoryModal: React.FC<DateHistoryModalProps> = ({
                                   roomId: p.roomId,
                                 })
                               }
-                              className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                              className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer ml-auto"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
-                              <span>{language === 'hi' ? 'स्थायी हटाएं' : 'Delete Permanently'}</span>
+                              <span>{language === 'hi' ? 'स्थायी हटाएं' : 'Delete'}</span>
                             </button>
                           </div>
                         )}
