@@ -108,7 +108,7 @@ app.use('/uploads', (req, res) => {
           return res.sendFile(restoredPath);
         }
 
-        // 1. Search data/room_photos.json for matching backupDataUrl
+        // Search data/room_photos.json for matching backupDataUrl
         const photosMap = loadRoomPhotos();
         for (const cat in photosMap) {
           const match = (photosMap[cat] || []).find(
@@ -121,26 +121,6 @@ app.use('/uploads', (req, res) => {
               return res.sendFile(restoredPath);
             }
           }
-        }
-
-        // 2. Fallback to room canonical photo if category is identifiable
-        const matchCat = filename.match(/^(?:ref|reference|incorrect)_(.+?)(?:_\d+|[._])/i);
-        const cat = matchCat ? normalizeRoomCategory(matchCat[1]) : '';
-        if (cat) {
-          const canonical = path.join(REFERENCE_UPLOADS_DIR, `ref_${cat}_canonical.jpg`);
-          if (fs.existsSync(canonical)) {
-            try {
-              fs.copyFileSync(canonical, restoredPath);
-            } catch {}
-            return res.sendFile(canonical);
-          }
-        }
-
-        // 3. Fallback to any canonical photo in REFERENCE_UPLOADS_DIR
-        const anyCanonical = fs.readdirSync(REFERENCE_UPLOADS_DIR).find((f) => f.endsWith('_canonical.jpg'));
-        if (anyCanonical) {
-          const fullPath = path.join(REFERENCE_UPLOADS_DIR, anyCanonical);
-          return res.sendFile(fullPath);
         }
       } else if (req.originalUrl.startsWith('/uploads/completion/')) {
         const restoredPath = path.join(COMPLETION_UPLOADS_DIR, filename);
@@ -177,7 +157,6 @@ const DEFAULT_KNOWLEDGE = [
     category: 'reception',
     roomNameHi: 'RECEPTION AREA',
     roomNameEn: 'RECEPTION AREA',
-    referencePhotoUrl: '/uploads/reference/ref_reception_1794401118506_2hm8.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin (Lalit Sir)',
@@ -240,33 +219,7 @@ const DEFAULT_KNOWLEDGE = [
       'भैया, रिसेप्शन एरिया ऑफिस का सबसे मुख्य चेहरा है। सोफे के सभी कुशन बिल्कुल सीधे और फूले हुए रखिए। सेंटर टेबल पर साफ कोस्टर, पानी की सीलबंद बोतल, दो कांच के गिलास और विजिटर डायरी रखें। जैसे ही कोई मेहमान जाएं, तुरंत टेबल को कपड़े से चमका दें।',
     voiceScriptEn:
       'Reception area is the face of our office. Keep cushions upright and plumped at 45 degrees, place sealed water bottle on coasters, and clean table right after guests leave.',
-    versions: [
-      {
-        version: 1,
-        updatedAt: '2026-11-02T08:30:00Z',
-        updatedBy: 'Admin (System)',
-        changeNote: 'Initial master visual guideline approved',
-        titleHi: 'रिसेप्शन एरिया व फ्रंट डेस्क मानक',
-        titleEn: 'Reception Area & Front Desk Standard',
-        category: 'reception',
-        referencePhotoUrl: '/uploads/reference/ref_reception_1794401118506_2hm8.jpg',
-        steps: [
-          {
-            stepNumber: 1,
-            instructionHi: 'सोफे के सभी कुशन को 45 डिग्री पर सीधा और फूला हुआ रखें।',
-            instructionEn: 'Position all sofa cushions upright and plumped at 45 degrees.',
-          },
-        ],
-        cleaningProcedureHi: 'ग्लास क्लीनर से टेबल चमकाएं।',
-        cleaningProcedureEn: 'Polish glass with lint-free cloth.',
-        qualityStandardsHi: ['टेबल पर कोई उंगलियों के निशान न हों।'],
-        qualityStandardsEn: ['Zero finger smudges on table.'],
-        mistakesToAvoidHi: ['बिना कोस्टर के पानी की बोतल रखना।'],
-        mistakesToAvoidEn: ['Placing cold bottles without coasters.'],
-        voiceScriptHi: 'रिसेप्शन एरिया में सफाई और व्यवस्था का पूरा ध्यान रखें।',
-        voiceScriptEn: 'Maintain full cleanliness in reception area.',
-      },
-    ],
+    versions: [],
     createdAt: '2026-11-02T08:30:00Z',
     updatedAt: '2026-11-02T08:30:00Z',
   },
@@ -275,7 +228,6 @@ const DEFAULT_KNOWLEDGE = [
     category: 'lalit_sir_cabin',
     roomNameHi: 'LALIT SIR CABIN',
     roomNameEn: 'LALIT SIR CABIN',
-    referencePhotoUrl: '/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin',
@@ -344,33 +296,7 @@ const DEFAULT_KNOWLEDGE = [
       'भैया, ललित सर के कैबिन में जाने से पहले हमेशा दो बार नॉक करें और पूछकर ही अंदर जाएं। सर की मुख्य घूमने वाली कुर्सी बीच में सीधी रखें और दोनों विजिटर कुर्सियां बराबर रखें। टेबल के दाएं कोने पर कोस्टर में ढका हुआ पानी का जग और उल्टा गिलास रखिए। टेबल पर रखी सर की फाइलों या कागजों को बिल्कुल हाथ न लगाएं। पानी या चाय हमेशा दाएं तरफ से ही परोसें।',
     voiceScriptEn:
       'Always knock twice before entering Lalit Sir cabin. Center the swivel chair, keep 2 visitor chairs parallel, place covered water carafe on right leather coaster, and never touch any documents on the desk.',
-    versions: [
-      {
-        version: 1,
-        updatedAt: '2026-11-02T08:45:00Z',
-        updatedBy: 'Admin (System)',
-        changeNote: 'Executive protocol initialized',
-        titleHi: 'ललित सर कैबिन व्यवस्था व प्रोटोकॉल',
-        titleEn: 'Lalit Sir Cabin Arrangement & Protocol',
-        category: 'lalit_sir_cabin',
-        referencePhotoUrl: '/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
-        steps: [
-          {
-            stepNumber: 1,
-            instructionHi: 'हमेशा दो बार नॉक करें।',
-            instructionEn: 'Always knock twice before entering.',
-          },
-        ],
-        cleaningProcedureHi: 'सूखे कपड़े से डेस्क पोंछें।',
-        cleaningProcedureEn: 'Wipe desk with dry cloth.',
-        qualityStandardsHi: ['फाइलों को हाथ न लगाएं।'],
-        qualityStandardsEn: ['Never touch documents.'],
-        mistakesToAvoidHi: ['बिना नॉक किए जाना।'],
-        mistakesToAvoidEn: ['Entering without knock.'],
-        voiceScriptHi: 'ललित सर के कैबिन में नॉक करके जाएं और पानी दाएं कोने पर रखें।',
-        voiceScriptEn: 'Knock twice and set water on right coaster.',
-      },
-    ],
+    versions: [],
     createdAt: '2026-11-02T08:45:00Z',
     updatedAt: '2026-11-02T08:45:00Z',
   },
@@ -379,7 +305,6 @@ const DEFAULT_KNOWLEDGE = [
     category: 'the_skyline',
     roomNameHi: 'THE SKYLINE',
     roomNameEn: 'THE SKYLINE',
-    referencePhotoUrl: '/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin',
@@ -438,27 +363,7 @@ const DEFAULT_KNOWLEDGE = [
       'भैया, द स्काईलाइन मीटिंग रूम में चार कुर्सियां और एक टेबल है। चारों कुर्सियों को बिल्कुल सीधा टेबल के अंदर दबाकर रखें। हर सीट के आगे कोस्टर और उल्टा शीशे का गिलास रखिए। मीटिंग शुरू होने से पंद्रह मिनट पहले एसी चालू कर दें, और मीटिंग के बाद लाइट व एसी बंद कर दीजिए।',
     voiceScriptEn:
       'The Skyline meeting room has 4 chairs and 1 table. Tuck chairs straight, place coasters and inverted glasses at every seat, and turn AC on 15 minutes early.',
-    versions: [
-      {
-        version: 1,
-        updatedAt: '2026-11-02T09:00:00Z',
-        updatedBy: 'Admin',
-        changeNote: 'Initial room guide',
-        titleHi: 'द स्काईलाइन मीटिंग रूम मानक',
-        titleEn: 'The Skyline Meeting Room Standard',
-        category: 'the_skyline',
-        referencePhotoUrl: '/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg',
-        steps: [],
-        cleaningProcedureHi: '',
-        cleaningProcedureEn: '',
-        qualityStandardsHi: [],
-        qualityStandardsEn: [],
-        mistakesToAvoidHi: [],
-        mistakesToAvoidEn: [],
-        voiceScriptHi: '',
-        voiceScriptEn: '',
-      },
-    ],
+    versions: [],
     createdAt: '2026-11-02T09:00:00Z',
     updatedAt: '2026-11-02T09:00:00Z',
   },
@@ -467,7 +372,6 @@ const DEFAULT_KNOWLEDGE = [
     category: 'the_community',
     roomNameHi: 'THE COMMUNITY',
     roomNameEn: 'THE COMMUNITY',
-    referencePhotoUrl: '/uploads/reference/ref_the_community_1794400603611_jrnc.jpg',
     currentVersion: 1,
     status: 'approved',
     approvedBy: 'Admin',
@@ -843,250 +747,26 @@ function saveGuides(guides: any[]): void {
   }
 }
 
-// Default Seed Photos for each room gallery
+// Room categories registry - Only newly uploaded photos by Admin should be displayed as reference photos
 const DEFAULT_ROOM_PHOTOS: Record<string, any[]> = {
-  prestige_loft: [
-    {
-      id: 'photo_prestige_1',
-      url: '/uploads/reference/ref_prestige_loft_1794400567624_qayv.jpg',
-      fileName: 'ref_prestige_loft_1794400567624_qayv.jpg',
-      captionHi: 'प्रेस्टीज लॉफ्ट: 2 सोफे, 45° कुशन व सेंटर टेबल व्यवस्था',
-      captionEn: 'Prestige Loft: 2 sofas, 45° plumped cushions & center table setup',
-      uploadedAt: '2026-11-11T12:36:07Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  the_skyline: [
-    {
-      id: 'photo_skyline_1',
-      url: '/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg',
-      fileName: 'ref_the_skyline_1794400592787_as2u.jpg',
-      captionHi: 'द स्काईलाइन: 4 कुर्सियां टेबल के नीचे समानांतर अंदर व पानी व्यवस्था',
-      captionEn: 'The Skyline: 4 chairs tucked parallel under table & water setup',
-      uploadedAt: '2026-11-11T12:36:32Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  the_community: [
-    {
-      id: 'photo_community_1',
-      url: '/uploads/reference/ref_the_community_1794400603611_jrnc.jpg',
-      fileName: 'ref_the_community_1794400603611_jrnc.jpg',
-      captionHi: 'द कम्युनिटी: 10 कुर्सियां (दोनों तरफ 5-5) कतार में व स्टेशनरी पैड',
-      captionEn: 'The Community: 10 chairs aligned with stationery pads',
-      uploadedAt: '2026-11-11T12:36:43Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  the_summit: [
-    {
-      id: 'photo_summit_1',
-      url: '/uploads/reference/ref_the_summit_1794400682325_5379.jpg',
-      fileName: 'ref_the_summit_1794400682325_5379.jpg',
-      captionHi: 'द समिट: 4 एग्जीक्यूटिव कुर्सियां व टेबल व्यवस्था',
-      captionEn: 'The Summit: 4 executive chairs & conference table setup',
-      uploadedAt: '2026-11-11T12:38:02Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  wcr_air: [
-    {
-      id: 'photo_wcrair_1',
-      url: '/uploads/reference/ref_wcr_air_1794400701090_f35c.jpg',
-      fileName: 'ref_wcr_air_1794400701090_f35c.jpg',
-      captionHi: 'डब्ल्यूसीआर एयर: राउंड टेबल व 4 कुर्सियां व्यवस्था',
-      captionEn: 'WCR Air: Round table & 4 aligned chairs',
-      uploadedAt: '2026-11-11T12:38:21Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  elegance_suite: [
-    {
-      id: 'photo_elegance_1',
-      url: '/uploads/reference/ref_elegance_suite_1794400736550_enns.jpg',
-      fileName: 'ref_elegance_suite_1794400736550_enns.jpg',
-      captionHi: 'एलिगेंस सुइट: सीनियर मैनेजर डेस्क व कुर्सियां व्यवस्था (कोण 1)',
-      captionEn: 'Elegance Suite: Senior manager desk and chairs setup (Angle 1)',
-      uploadedAt: '2026-11-11T12:38:56Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-    {
-      id: 'photo_elegance_2',
-      url: '/uploads/reference/ref_elegance_suite_1794400764795_glxg.jpg',
-      fileName: 'ref_elegance_suite_1794400764795_glxg.jpg',
-      captionHi: 'एलिगेंस सुइट: विज़िटर कुर्सियां व कोस्टर व्यवस्था (कोण 2)',
-      captionEn: 'Elegance Suite: Visitor chairs & coaster setup (Angle 2)',
-      uploadedAt: '2026-11-11T12:39:24Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: false,
-      photoType: 'reference',
-    },
-  ],
-  prime_loft: [
-    {
-      id: 'photo_primeloft_1',
-      url: '/uploads/reference/ref_prime_loft_1794401077352_iqu9.jpg',
-      fileName: 'ref_prime_loft_1794401077352_iqu9.jpg',
-      captionHi: 'प्राइम लॉफ्ट: 3 कुर्सियां व डिस्कशन टेबल व्यवस्था',
-      captionEn: 'Prime Loft: 3 chairs and discussion table setup',
-      uploadedAt: '2026-11-11T12:44:37Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  regency: [
-    {
-      id: 'photo_regency_1',
-      url: '/uploads/reference/ref_regency_1794401083315_fj25.jpg',
-      fileName: 'ref_regency_1794401083315_fj25.jpg',
-      captionHi: 'रीजेंसी: 3 कुर्सियां, साफ टेबल व पानी की व्यवस्था',
-      captionEn: 'Regency: 3 chairs, clean table and water setup',
-      uploadedAt: '2026-11-11T12:44:43Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  lalit_sir_cabin: [
-    {
-      id: 'photo_lalitsir_1',
-      url: '/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
-      fileName: 'ref_lalit_sir_cabin_1794401097115_xhfy.jpg',
-      captionHi: 'ललित सर डेस्क: मुख्य लेदर चेयर बीच में सीधी व विज़िटर कुर्सियां (कोण 1)',
-      captionEn: 'Lalit Sir desk: Centered executive chair & visitor chairs (Angle 1)',
-      uploadedAt: '2026-11-11T12:44:57Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-    {
-      id: 'photo_lalitsir_2',
-      url: '/uploads/reference/ref_lalit_sir_cabin_1794401101134_tarr.jpg',
-      fileName: 'ref_lalit_sir_cabin_1794401101134_tarr.jpg',
-      captionHi: 'ललित सर डेस्क: राइट लेदर कोस्टर पर ढका जग व उल्टा गिलास (कोण 2)',
-      captionEn: 'Lalit Sir desk: Right leather coaster with carafe & inverted glass (Angle 2)',
-      uploadedAt: '2026-11-11T12:45:01Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: false,
-      photoType: 'reference',
-    },
-    {
-      id: 'photo_lalitsir_3',
-      url: '/uploads/reference/ref_lalit_sir_cabin_1794401107188_rtzf.jpg',
-      fileName: 'ref_lalit_sir_cabin_1794401107188_rtzf.jpg',
-      captionHi: 'ललित सर कैबिन: संपूर्ण कैबिन लेआउट व कुर्सियां व्यवस्था (कोण 3)',
-      captionEn: 'Lalit Sir Cabin: Full cabin layout and seating arrangement (Angle 3)',
-      uploadedAt: '2026-11-11T12:45:07Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: false,
-      photoType: 'reference',
-    },
-  ],
-  reception: [
-    {
-      id: 'photo_reception_1',
-      url: '/uploads/reference/ref_reception_1794401118506_2hm8.jpg',
-      fileName: 'ref_reception_1794401118506_2hm8.jpg',
-      captionHi: 'रिसेप्शन लाउंज: विजिटर सोफा, कुशन 45° व सेंटर टेबल (कोण 1)',
-      captionEn: 'Reception lounge: Visitor sofa, 45° cushions & center table (Angle 1)',
-      uploadedAt: '2026-11-11T12:45:18Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-    {
-      id: 'photo_reception_2',
-      url: '/uploads/reference/ref_reception_1794401126183_ekmm.jpg',
-      fileName: 'ref_reception_1794401126183_ekmm.jpg',
-      captionHi: 'रिसेप्शन लाउंज: कोस्टर, पानी की बोतल व विजिटर डायरी (कोण 2)',
-      captionEn: 'Reception lounge: Coasters, water bottle & guest directory (Angle 2)',
-      uploadedAt: '2026-11-11T12:45:26Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: false,
-      photoType: 'reference',
-    },
-  ],
+  prestige_loft: [],
+  the_skyline: [],
+  the_community: [],
+  the_summit: [],
+  wcr_air: [],
+  elegance_suite: [],
+  prime_loft: [],
+  regency: [],
+  lalit_sir_cabin: [],
+  reception: [],
   pantry: [],
   lights_equipment: [],
   workstations: [],
-  kitchen_area: [
-    {
-      id: 'photo_kitchen_area_1',
-      url: '/uploads/reference/ref_kitchen_area_canonical.jpg',
-      fileName: 'ref_kitchen_area_canonical.jpg',
-      captionHi: 'किचन एरिया: साफ काउंटरटॉप, कॉफी मशीन, व्यवस्थित क्रॉकरी व स्वच्छ सिंक व्यवस्था',
-      captionEn: 'Kitchen Area: Spotless stainless counters, espresso machine, clean glasses, and tidy racks',
-      uploadedAt: '2026-11-11T12:46:00Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  employee_desk_area: [
-    {
-      id: 'photo_employee_desk_area_1',
-      url: '/uploads/reference/ref_employee_desk_area_canonical.jpg',
-      fileName: 'ref_employee_desk_area_canonical.jpg',
-      captionHi: 'एम्प्लॉई डेस्क एरिया: सीधी कुर्सियां, साफ मॉनिटर, व्यवस्थित केबल व स्वच्छ फर्श',
-      captionEn: 'Employee Desk Area: Aligned ergonomic chairs, dusted monitors, clean cable routing, and tidy workstations',
-      uploadedAt: '2026-11-11T12:46:10Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  pool_area: [
-    {
-      id: 'photo_pool_area_1',
-      url: '/uploads/reference/ref_pool_area_canonical.jpg',
-      fileName: 'ref_pool_area_canonical.jpg',
-      captionHi: 'पूल एरिया: व्यवस्थित क्यू रैक, साफ फेल्ट, बॉल्स रैक में व आसपास की सीटिंग व्यवस्थित',
-      captionEn: 'Pool Area: Tournament-standard clean table, cue sticks in rack, arranged balls, and tidy lounge seating',
-      uploadedAt: '2026-11-11T12:46:20Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  light_combination_visitor: [
-    {
-      id: 'photo_light_combination_visitor_1',
-      url: '/uploads/reference/ref_light_combination_visitor_canonical.jpg',
-      fileName: 'ref_light_combination_visitor_canonical.jpg',
-      captionHi: 'विजिटर/क्लाइंट मोड: रिसेप्शन लोगो बैकलाइट, मीटिंग रूम वॉर्म लाइट्स व फोकस डाउनलाइट्स चालू',
-      captionEn: 'Visitor/Client Mode: Reception logo backlight, warm meeting room downlights, and ambient perimeter wash',
-      uploadedAt: '2026-11-11T12:46:30Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
-  light_combination_employee: [
-    {
-      id: 'photo_light_combination_employee_1',
-      url: '/uploads/reference/ref_light_combination_employee_canonical.jpg',
-      fileName: 'ref_light_combination_employee_canonical.jpg',
-      captionHi: 'एम्प्लॉई मोड: 4500K संतुलित वर्कस्टेशन लाइट्स चालू, खाली मीटिंग रूम्स की लाइटें बंद',
-      captionEn: 'Employee Mode: 4500K balanced linear task lighting over desks, lights OFF in unused meeting spaces',
-      uploadedAt: '2026-11-11T12:46:40Z',
-      uploadedBy: 'Admin (Chetan)',
-      isPrimary: true,
-      photoType: 'reference',
-    },
-  ],
+  kitchen_area: [],
+  employee_desk_area: [],
+  pool_area: [],
+  light_combination_visitor: [],
+  light_combination_employee: [],
 };
 
 // Canonical Room Category Normalizer
@@ -3729,25 +3409,15 @@ async function startServer() {
     });
   }
 
-  // Ensure all reference photos exist on disk
+  // Initialize databases on disk
   try {
     loadRoomPhotos();
-    const assetsDir = path.join(__dirname, 'src', 'assets', 'images');
-    if (fs.existsSync(assetsDir)) {
-      const assetFiles = fs.readdirSync(assetsDir);
-      for (const f of assetFiles) {
-        const m = f.match(/^([a-z0-9_]+)_\d+\.jpg$/i);
-        if (m) {
-          const roomKey = m[1];
-          const canonical = path.join(REFERENCE_UPLOADS_DIR, `ref_${roomKey}_canonical.jpg`);
-          if (!fs.existsSync(canonical)) {
-            fs.copyFileSync(path.join(assetsDir, f), canonical);
-          }
-        }
-      }
-    }
+    loadKnowledgeBase();
+    loadGuides();
+    loadTasks();
+    loadCompletionPhotos();
   } catch (seedErr) {
-    console.warn('Startup reference photo sync notice:', seedErr);
+    console.warn('Startup database initialization notice:', seedErr);
   }
 
   server.listen(PORT, '0.0.0.0', () => {

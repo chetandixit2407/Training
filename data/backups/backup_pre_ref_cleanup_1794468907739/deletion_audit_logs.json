@@ -1,0 +1,92 @@
+[
+  {
+    "id": "del_1794465934222_1bb5",
+    "targetType": "room_reference",
+    "targetId": "photo_the_community_1794464667719_ecxw",
+    "roomId": "the_community",
+    "fileName": "ref_the_community_1794400603611_jrnc.jpg",
+    "storagePath": "/uploads/reference/ref_the_community_1794400603611_jrnc.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:45:34.222Z"
+  },
+  {
+    "id": "del_1794465928360_p1wi",
+    "targetType": "room_reference",
+    "targetId": "photo_the_community_1794403820400_30ki",
+    "roomId": "the_community",
+    "fileName": "ref_the_community_1794402820233_7qzu.jpg",
+    "storagePath": "/uploads/reference/ref_the_community_1794402820233_7qzu.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:45:28.360Z"
+  },
+  {
+    "id": "del_1794465924627_1zrk",
+    "targetType": "room_reference",
+    "targetId": "photo_community_1",
+    "roomId": "the_community",
+    "fileName": "ref_the_community_1794402811057_ppyd.jpg",
+    "storagePath": "/uploads/reference/ref_the_community_1794402811057_ppyd.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:45:24.627Z"
+  },
+  {
+    "id": "del_1794465904989_ynjt",
+    "targetType": "room_reference",
+    "targetId": "photo_the_skyline_1794464667719_xmtu",
+    "roomId": "the_skyline",
+    "fileName": "ref_the_skyline_1794400592787_as2u.jpg",
+    "storagePath": "/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:45:04.989Z"
+  },
+  {
+    "id": "del_1794465901876_aqgx",
+    "targetType": "room_reference",
+    "targetId": "photo_skyline_1",
+    "roomId": "the_skyline",
+    "fileName": "ref_the_skyline_1794402798456_v7h8.jpg",
+    "storagePath": "/uploads/reference/ref_the_skyline_1794402798456_v7h8.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:45:01.876Z"
+  },
+  {
+    "id": "del_1794465700614_zaj0",
+    "targetType": "room_reference",
+    "targetId": "photo_prestige_loft_1794464667719_h8p8",
+    "roomId": "prestige_loft",
+    "fileName": "ref_prestige_loft_1794400567624_qayv.jpg",
+    "storagePath": "/uploads/reference/ref_prestige_loft_1794400567624_qayv.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:41:40.615Z"
+  },
+  {
+    "id": "del_1794465695917_2jav",
+    "targetType": "room_reference",
+    "targetId": "photo_prestige_1",
+    "roomId": "prestige_loft",
+    "fileName": "ref_prestige_loft_1794402729813_4gif.jpg",
+    "storagePath": "/uploads/reference/ref_prestige_loft_1794402729813_4gif.jpg",
+    "deletedBy": "Office%20Manager%20(Admin)",
+    "deletedAt": "2026-11-12T06:41:35.917Z"
+  },
+  {
+    "id": "del_1794464683935_b3zo",
+    "targetType": "room_reference",
+    "targetId": "photo_reception_1794464681961_ng57q",
+    "roomId": "reception",
+    "fileName": "ref_reception_1794464681960_unbm.png",
+    "storagePath": "rooms/reception/ref_reception_1794464681960_unbm.png",
+    "deletedBy": "Admin",
+    "deletedAt": "2026-11-12T06:24:43.935Z"
+  },
+  {
+    "id": "del_1794464683277_l8x0",
+    "targetType": "room_reference",
+    "targetId": "photo_reception_1794464681258_dfjbb",
+    "roomId": "reception",
+    "fileName": "ref_reception_1794464681258_vml6.png",
+    "storagePath": "/uploads/reference/ref_reception_1794464681258_vml6.png",
+    "deletedBy": "Admin",
+    "deletedAt": "2026-11-12T06:24:43.277Z"
+  }
+]

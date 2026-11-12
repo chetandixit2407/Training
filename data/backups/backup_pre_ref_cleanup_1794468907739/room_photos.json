@@ -1,0 +1,453 @@
+{
+  "prestige_loft": [
+    {
+      "id": "photo_prestige_1",
+      "url": "/uploads/reference/ref_prestige_loft_1794400567624_qayv.jpg",
+      "fileName": "ref_prestige_loft_1794400567624_qayv.jpg",
+      "captionHi": "प्रेस्टीज लॉफ्ट: 2 सोफे, 45° कुशन व सेंटर टेबल व्यवस्था",
+      "captionEn": "Prestige Loft: 2 sofas, 45° plumped cushions & center table setup",
+      "uploadedAt": "2026-11-11T12:36:07Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_prestige_loft_1794468572773_v1kk",
+      "url": "/uploads/reference/ref_prestige_loft_1794402729813_4gif.jpg",
+      "fileName": "ref_prestige_loft_1794402729813_4gif.jpg",
+      "captionHi": "PRESTIGE LOFT - संदर्भ फोटो #2",
+      "captionEn": "PRESTIGE LOFT - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.078Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "the_skyline": [
+    {
+      "id": "photo_skyline_1",
+      "url": "/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg",
+      "fileName": "ref_the_skyline_1794400592787_as2u.jpg",
+      "captionHi": "द स्काईलाइन: 4 कुर्सियां टेबल के नीचे समानांतर अंदर व पानी व्यवस्था",
+      "captionEn": "The Skyline: 4 chairs tucked parallel under table & water setup",
+      "uploadedAt": "2026-11-11T12:36:32Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_the_skyline_1794468572773_wobj",
+      "url": "/uploads/reference/ref_the_skyline_1794402798456_v7h8.jpg",
+      "fileName": "ref_the_skyline_1794402798456_v7h8.jpg",
+      "captionHi": "THE SKYLINE - संदर्भ फोटो #2",
+      "captionEn": "THE SKYLINE - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.093Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "the_community": [
+    {
+      "id": "photo_community_1",
+      "url": "/uploads/reference/ref_the_community_1794402811057_ppyd.jpg",
+      "fileName": "ref_the_community_1794402811057_ppyd.jpg",
+      "captionHi": "द कम्युनिटी: 10 कुर्सियां (दोनों तरफ 5-5) कतार में व स्टेशनरी पैड",
+      "captionEn": "The Community: 10 chairs aligned with stationery pads",
+      "uploadedAt": "2026-11-12T07:29:19.085Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_the_community_1794468572773_1tc0",
+      "url": "/uploads/reference/ref_the_community_1794402820233_7qzu.jpg",
+      "fileName": "ref_the_community_1794402820233_7qzu.jpg",
+      "captionHi": "THE COMMUNITY - संदर्भ फोटो #2",
+      "captionEn": "THE COMMUNITY - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.089Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "the_summit": [
+    {
+      "id": "photo_summit_1",
+      "url": "/uploads/reference/ref_the_summit_1794400682325_5379.jpg",
+      "fileName": "ref_the_summit_1794400682325_5379.jpg",
+      "captionHi": "द समिट: 4 एग्जीक्यूटिव कुर्सियां व टेबल व्यवस्था",
+      "captionEn": "The Summit: 4 executive chairs & conference table setup",
+      "uploadedAt": "2026-11-11T12:38:02Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_the_summit_1794468572773_a0u7",
+      "url": "/uploads/reference/ref_the_summit_1794402966843_h00o.jpg",
+      "fileName": "ref_the_summit_1794402966843_h00o.jpg",
+      "captionHi": "THE SUMMIT - संदर्भ फोटो #2",
+      "captionEn": "THE SUMMIT - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.109Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "wcr_air": [
+    {
+      "id": "photo_wcrair_1",
+      "url": "/uploads/reference/ref_wcr_air_1794400701090_f35c.jpg",
+      "fileName": "ref_wcr_air_1794400701090_f35c.jpg",
+      "captionHi": "डब्ल्यूसीआर एयर: राउंड टेबल व 4 कुर्सियां व्यवस्था",
+      "captionEn": "WCR Air: Round table & 4 aligned chairs",
+      "uploadedAt": "2026-11-11T12:38:21Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_wcr_air_1794468572773_gfi4",
+      "url": "/uploads/reference/ref_wcr_air_1794402988287_vzcx.jpg",
+      "fileName": "ref_wcr_air_1794402988287_vzcx.jpg",
+      "captionHi": "WCR AIR - संदर्भ फोटो #2",
+      "captionEn": "WCR AIR - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.071Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "elegance_suite": [
+    {
+      "id": "photo_elegance_1",
+      "url": "/uploads/reference/ref_elegance_suite_1794400736550_enns.jpg",
+      "fileName": "ref_elegance_suite_1794400736550_enns.jpg",
+      "captionHi": "एलिगेंस सुइट: सीनियर मैनेजर डेस्क व कुर्सियां व्यवस्था (कोण 1)",
+      "captionEn": "Elegance Suite: Senior manager desk and chairs setup (Angle 1)",
+      "uploadedAt": "2026-11-11T12:38:56Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_elegance_2",
+      "url": "/uploads/reference/ref_elegance_suite_1794403014710_h874.jpg",
+      "fileName": "ref_elegance_suite_1794403014710_h874.jpg",
+      "captionHi": "एलिगेंस सुइट: विज़िटर कुर्सियां व कोस्टर व्यवस्था (कोण 2)",
+      "captionEn": "Elegance Suite: Visitor chairs & coaster setup (Angle 2)",
+      "uploadedAt": "2026-11-12T07:29:19.165Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_elegance_suite_1794468572773_irzg",
+      "url": "/uploads/reference/ref_elegance_suite_1794403027137_dvyx.jpg",
+      "fileName": "ref_elegance_suite_1794403027137_dvyx.jpg",
+      "captionHi": "ELEGANCE SUITE - संदर्भ फोटो #3",
+      "captionEn": "ELEGANCE SUITE - Reference Photo #3",
+      "uploadedAt": "2026-11-12T07:29:19.119Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "prime_loft": [
+    {
+      "id": "photo_primeloft_1",
+      "url": "/uploads/reference/ref_prime_loft_1794401077352_iqu9.jpg",
+      "fileName": "ref_prime_loft_1794401077352_iqu9.jpg",
+      "captionHi": "प्राइम लॉफ्ट: 3 कुर्सियां व डिस्कशन टेबल व्यवस्था",
+      "captionEn": "Prime Loft: 3 chairs and discussion table setup",
+      "uploadedAt": "2026-11-11T12:44:37Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_prime_loft_1794468572773_zr6j",
+      "url": "/uploads/reference/ref_prime_loft_1794403048708_z2ep.jpg",
+      "fileName": "ref_prime_loft_1794403048708_z2ep.jpg",
+      "captionHi": "PRIME LOFT - संदर्भ फोटो #2",
+      "captionEn": "PRIME LOFT - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.101Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "regency": [
+    {
+      "id": "photo_regency_1",
+      "url": "/uploads/reference/ref_regency_1794401083315_fj25.jpg",
+      "fileName": "ref_regency_1794401083315_fj25.jpg",
+      "captionHi": "रीजेंसी: 3 कुर्सियां, साफ टेबल व पानी की व्यवस्था",
+      "captionEn": "Regency: 3 chairs, clean table and water setup",
+      "uploadedAt": "2026-11-11T12:44:43Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_regency_1794468572774_st3e",
+      "url": "/uploads/reference/ref_regency_1794403054185_adxs.jpg",
+      "fileName": "ref_regency_1794403054185_adxs.jpg",
+      "captionHi": "REGENCY - संदर्भ फोटो #2",
+      "captionEn": "REGENCY - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.081Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "lalit_sir_cabin": [
+    {
+      "id": "photo_lalitsir_1",
+      "url": "/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg",
+      "fileName": "ref_lalit_sir_cabin_1794401097115_xhfy.jpg",
+      "captionHi": "ललित सर डेस्क: मुख्य लेदर चेयर बीच में सीधी व विज़िटर कुर्सियां (कोण 1)",
+      "captionEn": "Lalit Sir desk: Centered executive chair & visitor chairs (Angle 1)",
+      "uploadedAt": "2026-11-11T12:44:57Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_lalitsir_2",
+      "url": "/uploads/reference/ref_lalit_sir_cabin_1794403072114_4ezs.jpg",
+      "fileName": "ref_lalit_sir_cabin_1794403072114_4ezs.jpg",
+      "captionHi": "ललित सर डेस्क: राइट लेदर कोस्टर पर ढका जग व उल्टा गिलास (कोण 2)",
+      "captionEn": "Lalit Sir desk: Right leather coaster with carafe & inverted glass (Angle 2)",
+      "uploadedAt": "2026-11-12T07:29:19.136Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_lalitsir_3",
+      "url": "/uploads/reference/ref_lalit_sir_cabin_1794403075538_ize3.jpg",
+      "fileName": "ref_lalit_sir_cabin_1794403075538_ize3.jpg",
+      "captionHi": "ललित सर कैबिन: संपूर्ण कैबिन लेआउट व कुर्सियां व्यवस्था (कोण 3)",
+      "captionEn": "Lalit Sir Cabin: Full cabin layout and seating arrangement (Angle 3)",
+      "uploadedAt": "2026-11-12T07:29:19.131Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_lalit_sir_cabin_1794468572774_vflr",
+      "url": "/uploads/reference/ref_lalit_sir_cabin_1794403080152_swd3.jpg",
+      "fileName": "ref_lalit_sir_cabin_1794403080152_swd3.jpg",
+      "captionHi": "LALIT SIR CABIN - संदर्भ फोटो #4",
+      "captionEn": "LALIT SIR CABIN - Reference Photo #4",
+      "uploadedAt": "2026-11-12T07:29:19.145Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_lalit_sir_cabin_1794468572774_8euq",
+      "url": "/uploads/reference/ref_lalit_sir_cabin_1794403087059_njjw.jpg",
+      "fileName": "ref_lalit_sir_cabin_1794403087059_njjw.jpg",
+      "captionHi": "LALIT SIR CABIN - संदर्भ फोटो #5",
+      "captionEn": "LALIT SIR CABIN - Reference Photo #5",
+      "uploadedAt": "2026-11-12T07:29:19.148Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "reception": [
+    {
+      "id": "photo_reception_1",
+      "url": "/uploads/reference/ref_reception_1794401118506_2hm8.jpg",
+      "fileName": "ref_reception_1794401118506_2hm8.jpg",
+      "captionHi": "रिसेप्शन लाउंज: विजिटर सोफा, कुशन 45° व सेंटर टेबल (कोण 1)",
+      "captionEn": "Reception lounge: Visitor sofa, 45° cushions & center table (Angle 1)",
+      "uploadedAt": "2026-11-11T12:45:18Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_reception_2",
+      "url": "/uploads/reference/ref_reception_1794403142696_784z.jpg",
+      "fileName": "ref_reception_1794403142696_784z.jpg",
+      "captionHi": "रिसेप्शन लाउंज: कोस्टर, पानी की बोतल व विजिटर डायरी (कोण 2)",
+      "captionEn": "Reception lounge: Coasters, water bottle & guest directory (Angle 2)",
+      "uploadedAt": "2026-11-12T07:29:19.075Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_reception_1794468572774_8c5k",
+      "url": "/uploads/reference/ref_reception_1794403145414_xhpm.jpg",
+      "fileName": "ref_reception_1794403145414_xhpm.jpg",
+      "captionHi": "RECEPTION - संदर्भ फोटो #3",
+      "captionEn": "RECEPTION - Reference Photo #3",
+      "uploadedAt": "2026-11-12T07:29:19.078Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_reception_1794468572774_1uho",
+      "url": "/uploads/reference/ref_reception_1794403284335_0rm6.jpg",
+      "fileName": "ref_reception_1794403284335_0rm6.jpg",
+      "captionHi": "RECEPTION - संदर्भ फोटो #4",
+      "captionEn": "RECEPTION - Reference Photo #4",
+      "uploadedAt": "2026-11-12T07:29:19.105Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "pantry": [],
+  "lights_equipment": [],
+  "workstations": [],
+  "kitchen_area": [
+    {
+      "id": "photo_kitchen_area_1",
+      "url": "/uploads/reference/ref_kitchen_area_canonical.jpg",
+      "fileName": "ref_kitchen_area_canonical.jpg",
+      "captionHi": "किचन एरिया: साफ काउंटरटॉप, कॉफी मशीन, व्यवस्थित क्रॉकरी व स्वच्छ सिंक व्यवस्था",
+      "captionEn": "Kitchen Area: Spotless stainless counters, espresso machine, clean glasses, and tidy racks",
+      "uploadedAt": "2026-11-11T12:46:00Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_kitchen_area_1794468572774_60ts",
+      "url": "/uploads/reference/ref_kitchen_area_1794403153312_o4b0.jpg",
+      "fileName": "ref_kitchen_area_1794403153312_o4b0.jpg",
+      "captionHi": "KITCHEN AREA - संदर्भ फोटो #2",
+      "captionEn": "KITCHEN AREA - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.138Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_kitchen_area_1794468572774_q15t",
+      "url": "/uploads/reference/ref_kitchen_area_1794403215692_qvgl.jpg",
+      "fileName": "ref_kitchen_area_1794403215692_qvgl.jpg",
+      "captionHi": "KITCHEN AREA - संदर्भ फोटो #3",
+      "captionEn": "KITCHEN AREA - Reference Photo #3",
+      "uploadedAt": "2026-11-12T07:29:19.169Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "employee_desk_area": [
+    {
+      "id": "photo_employee_desk_area_1",
+      "url": "/uploads/reference/ref_employee_desk_area_canonical.jpg",
+      "fileName": "ref_employee_desk_area_canonical.jpg",
+      "captionHi": "एम्प्लॉई डेस्क एरिया: सीधी कुर्सियां, साफ मॉनिटर, व्यवस्थित केबल व स्वच्छ फर्श",
+      "captionEn": "Employee Desk Area: Aligned ergonomic chairs, dusted monitors, clean cable routing, and tidy workstations",
+      "uploadedAt": "2026-11-11T12:46:10Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_employee_desk_area_1794468572774_k9q2",
+      "url": "/uploads/reference/ref_employee_desk_area_1794403180500_59pe.jpg",
+      "fileName": "ref_employee_desk_area_1794403180500_59pe.jpg",
+      "captionHi": "EMPLOYEE DESK AREA - संदर्भ फोटो #2",
+      "captionEn": "EMPLOYEE DESK AREA - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.121Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "pool_area": [
+    {
+      "id": "photo_pool_area_1",
+      "url": "/uploads/reference/ref_pool_area_canonical.jpg",
+      "fileName": "ref_pool_area_canonical.jpg",
+      "captionHi": "पूल एरिया: व्यवस्थित क्यू रैक, साफ फेल्ट, बॉल्स रैक में व आसपास की सीटिंग व्यवस्थित",
+      "captionEn": "Pool Area: Tournament-standard clean table, cue sticks in rack, arranged balls, and tidy lounge seating",
+      "uploadedAt": "2026-11-11T12:46:20Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_pool_area_1794468572774_gs1r",
+      "url": "/uploads/reference/ref_pool_area_1794403199303_y1m3.jpg",
+      "fileName": "ref_pool_area_1794403199303_y1m3.jpg",
+      "captionHi": "POOL AREA - संदर्भ फोटो #2",
+      "captionEn": "POOL AREA - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.148Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_pool_area_1794468572774_qeij",
+      "url": "/uploads/reference/ref_pool_area_1794403222205_wt45.jpg",
+      "fileName": "ref_pool_area_1794403222205_wt45.jpg",
+      "captionHi": "POOL AREA - संदर्भ फोटो #3",
+      "captionEn": "POOL AREA - Reference Photo #3",
+      "uploadedAt": "2026-11-12T07:29:19.074Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "light_combination_visitor": [
+    {
+      "id": "photo_light_combination_visitor_1",
+      "url": "/uploads/reference/ref_light_combination_visitor_canonical.jpg",
+      "fileName": "ref_light_combination_visitor_canonical.jpg",
+      "captionHi": "विजिटर/क्लाइंट मोड: रिसेप्शन लोगो बैकलाइट, मीटिंग रूम वॉर्म लाइट्स व फोकस डाउनलाइट्स चालू",
+      "captionEn": "Visitor/Client Mode: Reception logo backlight, warm meeting room downlights, and ambient perimeter wash",
+      "uploadedAt": "2026-11-11T12:46:30Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_light_combination_visitor_1794468572774_urfm",
+      "url": "/uploads/reference/ref_light_combination_visitor_1794403313073_p17a.jpg",
+      "fileName": "ref_light_combination_visitor_1794403313073_p17a.jpg",
+      "captionHi": "LIGHT COMBINATION VISITOR - संदर्भ फोटो #2",
+      "captionEn": "LIGHT COMBINATION VISITOR - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.170Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ],
+  "light_combination_employee": [
+    {
+      "id": "photo_light_combination_employee_1",
+      "url": "/uploads/reference/ref_light_combination_employee_canonical.jpg",
+      "fileName": "ref_light_combination_employee_canonical.jpg",
+      "captionHi": "एम्प्लॉई मोड: 4500K संतुलित वर्कस्टेशन लाइट्स चालू, खाली मीटिंग रूम्स की लाइटें बंद",
+      "captionEn": "Employee Mode: 4500K balanced linear task lighting over desks, lights OFF in unused meeting spaces",
+      "uploadedAt": "2026-11-11T12:46:40Z",
+      "uploadedBy": "Admin (Chetan)",
+      "isPrimary": true,
+      "photoType": "reference"
+    },
+    {
+      "id": "photo_light_combination_employee_1794468572774_cxgz",
+      "url": "/uploads/reference/ref_light_combination_employee_1794403344750_qy1u.jpg",
+      "fileName": "ref_light_combination_employee_1794403344750_qy1u.jpg",
+      "captionHi": "LIGHT COMBINATION EMPLOYEE - संदर्भ फोटो #2",
+      "captionEn": "LIGHT COMBINATION EMPLOYEE - Reference Photo #2",
+      "uploadedAt": "2026-11-12T07:29:19.128Z",
+      "uploadedBy": "Admin",
+      "isPrimary": false,
+      "photoType": "reference"
+    }
+  ]
+}

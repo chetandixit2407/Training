@@ -4,7 +4,6 @@
     "category": "reception",
     "roomNameHi": "RECEPTION AREA",
     "roomNameEn": "RECEPTION AREA",
-    "referencePhotoUrl": "/uploads/reference/ref_reception_1794403142696_784z.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin (Lalit Sir)",
@@ -74,7 +73,6 @@
         "titleHi": "रिसेप्शन एरिया व फ्रंट डेस्क मानक",
         "titleEn": "Reception Area & Front Desk Standard",
         "category": "reception",
-        "referencePhotoUrl": "/uploads/reference/ref_reception_1794401118506_2hm8.jpg",
         "steps": [
           {
             "stepNumber": 1,
@@ -101,14 +99,14 @@
       }
     ],
     "createdAt": "2026-11-02T08:30:00Z",
-    "updatedAt": "2026-11-12T06:24:43.935Z"
+    "updatedAt": "2026-11-12T07:41:01.874Z",
+    "referencePhotoUrl": "/uploads/reference/ref_reception_1794469466885_t72b.jpg"
   },
   {
     "id": "knowledge-lalit-sir-cabin",
     "category": "lalit_sir_cabin",
     "roomNameHi": "LALIT SIR CABIN",
     "roomNameEn": "LALIT SIR CABIN",
-    "referencePhotoUrl": "/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin",
@@ -184,7 +182,6 @@
         "titleHi": "ललित सर कैबिन व्यवस्था व प्रोटोकॉल",
         "titleEn": "Lalit Sir Cabin Arrangement & Protocol",
         "category": "lalit_sir_cabin",
-        "referencePhotoUrl": "/uploads/reference/ref_lalit_sir_cabin_1794401097115_xhfy.jpg",
         "steps": [
           {
             "stepNumber": 1,
@@ -211,14 +208,14 @@
       }
     ],
     "createdAt": "2026-11-02T08:45:00Z",
-    "updatedAt": "2026-11-12T06:46:01.497Z"
+    "updatedAt": "2026-11-12T06:46:01.497Z",
+    "referencePhotoUrl": "/uploads/reference/ref_lalit_sir_cabin_1794469442971_aysy.jpg"
   },
   {
     "id": "knowledge-the-skyline",
     "category": "the_skyline",
     "roomNameHi": "THE SKYLINE",
     "roomNameEn": "THE SKYLINE",
-    "referencePhotoUrl": "/uploads/reference/ref_the_skyline_1794465914968_ax9m.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin",
@@ -284,7 +281,6 @@
         "titleHi": "द स्काईलाइन मीटिंग रूम मानक",
         "titleEn": "The Skyline Meeting Room Standard",
         "category": "the_skyline",
-        "referencePhotoUrl": "/uploads/reference/ref_the_skyline_1794400592787_as2u.jpg",
         "steps": [],
         "cleaningProcedureHi": "",
         "cleaningProcedureEn": "",
@@ -297,14 +293,14 @@
       }
     ],
     "createdAt": "2026-11-02T09:00:00Z",
-    "updatedAt": "2026-11-12T06:45:14.967Z"
+    "updatedAt": "2026-11-12T06:45:14.967Z",
+    "referencePhotoUrl": "/uploads/reference/ref_the_skyline_1794469343462_b2f8.jpg"
   },
   {
     "id": "knowledge-the-community",
     "category": "the_community",
     "roomNameHi": "THE COMMUNITY",
     "roomNameEn": "THE COMMUNITY",
-    "referencePhotoUrl": "/uploads/reference/ref_the_community_1794465941787_mzeu.jpg",
     "currentVersion": 1,
     "status": "approved",
     "approvedBy": "Admin",
@@ -361,6 +357,7 @@
     "voiceScriptEn": "The Community boardroom features 10 chairs and 1 large table. Tuck 5 chairs on each side straight and provide water and stationery at all 10 seats.",
     "versions": [],
     "createdAt": "2026-11-02T09:15:00Z",
-    "updatedAt": "2026-11-12T06:45:46.807Z"
+    "updatedAt": "2026-11-12T06:45:46.807Z",
+    "referencePhotoUrl": "/uploads/reference/ref_the_community_1794469356698_1dh2.jpg"
   }
 ]

@@ -184,19 +184,6 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
             }
           }}
           onError={() => {
-            if (!fallbackSrc && effectiveSrc && effectiveSrc.startsWith('/uploads/reference/')) {
-              const m = effectiveSrc.match(/ref_([a-z0-9_]+?)(?:_\d+|[._])/i);
-              const cat = m ? m[1] : '';
-              if (cat) {
-                const canonical = `/uploads/reference/ref_${cat}_canonical.jpg`;
-                if (effectiveSrc !== canonical) {
-                  console.info(`[ReferenceImage] Attempting canonical fallback for ${effectiveSrc} -> ${canonical}`);
-                  setFallbackSrc(canonical);
-                  setIsLoading(true);
-                  return;
-                }
-              }
-            }
             setIsLoading(false);
             setHasError(true);
             console.error(`[ReferenceImage] Failed to load image: ${effectiveSrc} (attempt ${retryCount + 1})`);
