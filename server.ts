@@ -581,7 +581,27 @@ function loadCompletionPhotos(): any[] {
   try {
     if (fs.existsSync(COMPLETION_PHOTOS_FILE)) {
       const data = fs.readFileSync(COMPLETION_PHOTOS_FILE, 'utf-8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        // Auto-restore any missing physical files from embedded backupDataUrl
+        for (const p of parsed) {
+          if (p && p.url && p.url.startsWith('/uploads/completion/') && p.backupDataUrl && p.backupDataUrl.startsWith('data:image/')) {
+            const filename = p.fileName || path.basename(p.url.split('?')[0]);
+            const filePath = path.join(COMPLETION_UPLOADS_DIR, filename);
+            if (!fs.existsSync(filePath)) {
+              try {
+                const match = p.backupDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
+                if (match) {
+                  fs.writeFileSync(filePath, Buffer.from(match[2].trim(), 'base64'));
+                }
+              } catch (restoreErr) {
+                console.warn('Could not auto-restore completion photo:', filename, restoreErr);
+              }
+            }
+          }
+        }
+        return parsed;
+      }
     }
   } catch (err) {
     console.error('Error reading completion_photos.json:', err);
@@ -1012,9 +1032,21 @@ function loadRoomPhotos(): Record<string, any[]> {
 
         const availableFiles = catDiskFiles.filter((f) => !usedFiles.has(f));
 
-        // 1. Repair any record whose file does not exist on disk if an available disk file exists for this category
+        // 1. Restore missing physical file from backupDataUrl if available, or repair legacy filename
         list.forEach((p) => {
           const base = p.fileName || (p.url ? path.basename(p.url.split('?')[0]) : '');
+          if (base && !diskSet.has(base) && p.backupDataUrl && typeof p.backupDataUrl === 'string' && p.backupDataUrl.startsWith('data:image/')) {
+            try {
+              const match = p.backupDataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,([\s\S]+)$/);
+              if (match) {
+                fs.writeFileSync(path.join(REFERENCE_UPLOADS_DIR, base), Buffer.from(match[2].trim(), 'base64'));
+                diskSet.add(base);
+                usedFiles.add(base);
+              }
+            } catch (restoreErr) {
+              console.warn('Failed to restore image from backupDataUrl:', base, restoreErr);
+            }
+          }
           if ((!base || !diskSet.has(base)) && availableFiles.length > 0) {
             const replacement = availableFiles.shift()!;
             usedFiles.add(replacement);
@@ -1156,13 +1188,21 @@ function requireAdmin(req: express.Request, res: express.Response, next: express
 // API ENDPOINTS
 // ==========================================
 
+function stripBackupField(list: any[]): any[] {
+  return (list || []).map(({ backupDataUrl, ...rest }) => rest);
+}
+
 // 1. GET ALL ROOM REFERENCE PHOTOS & AI ANALYSES (Accessible to Pantry Boys & Admins)
 app.get('/api/photos/all-rooms', (req, res) => {
   const photos = loadRoomPhotos();
   const analyses = loadRoomAnalysis();
+  const cleanPhotos: Record<string, any[]> = {};
+  Object.keys(photos).forEach((k) => {
+    cleanPhotos[k] = stripBackupField(photos[k]);
+  });
   res.json({
     success: true,
-    photosByRoom: photos,
+    photosByRoom: cleanPhotos,
     analysesByRoom: analyses,
   });
 });
@@ -1172,7 +1212,7 @@ app.get('/api/photos/room/:category', (req, res) => {
   const normCat = normalizeRoomCategory(req.params.category);
   const photos = loadRoomPhotos();
   const analyses = loadRoomAnalysis();
-  const roomList = photos[normCat] || photos[req.params.category] || [];
+  const roomList = stripBackupField(photos[normCat] || photos[req.params.category] || []);
   const roomAnalysis = analyses[normCat] || analyses[req.params.category] || null;
   res.json({
     success: true,
@@ -1218,6 +1258,7 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
         id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: permanentUrl,
         fileName: savedFileName,
+        backupDataUrl: p.photoBase64,
         captionHi: p.captionHi || `${roomName || normCat} संदर्भ फोटो #${allRoomPhotos[normCat].length + 1}`,
         captionEn: p.captionEn || `${roomName || normCat} reference angle #${allRoomPhotos[normCat].length + 1}`,
         uploadedAt: now,
@@ -1449,6 +1490,7 @@ function executePhotoReplacement(category: string, photoId: string, req: express
       ...existing,
       url: permanentUrl,
       fileName: savedFileName,
+      backupDataUrl: photoBase64,
       captionHi: captionHi ?? existing.captionHi,
       captionEn: captionEn ?? existing.captionEn,
       uploadedAt: new Date().toISOString(),
@@ -1939,6 +1981,7 @@ app.post('/api/photos/upload', requireAdmin, (req, res) => {
       id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       url: permanentUrl,
       fileName: savedFileName,
+      backupDataUrl: photoBase64,
       captionHi: `${roomName || normCat} संदर्भ फोटो`,
       captionEn: `${roomName || normCat} Reference Photo`,
       uploadedAt: now,
@@ -2413,11 +2456,14 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
 
       if (item.photoBase64.startsWith('data:image/')) {
         const saved = saveCompletionPhoto(item.photoBase64, `task_${taskId}_comp_${idx + 1}`);
+        if (!saved.url || !saved.url.startsWith('/uploads/completion/') || !saved.fileName || !fs.existsSync(path.join(COMPLETION_UPLOADS_DIR, saved.fileName))) {
+          throw new Error(`Failed to store completion photo #${idx + 1} on server storage`);
+        }
         finalUrl = saved.url;
         finalFileName = saved.fileName;
       }
 
-      const proofItem = {
+      const proofItem: any = {
         id: `proof_${taskId}_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
         taskId,
         taskTitle: taskTitle || 'Office Task',
@@ -2432,6 +2478,9 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
         caption: item.caption || '',
         retentionDays: RETENTION_DAYS,
       };
+      if (item.photoBase64 && item.photoBase64.startsWith('data:image/')) {
+        proofItem.backupDataUrl = item.photoBase64;
+      }
 
       savedProofItems.push(proofItem);
     });
@@ -2443,10 +2492,13 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
       saveCompletionPhotos(allCompletionPhotos);
     }
 
+    // Strip backupDataUrl before storing in tasks.json or returning over HTTP
+    const publicProofItems = savedProofItems.map(({ backupDataUrl, ...rest }) => rest);
+
     // 4. Update the Task in persistent tasks database (tasks.json)
     const tasksList = loadTasks();
     const taskIndex = tasksList.findIndex((t: any) => t.id === taskId);
-    const primaryAfterUrl = savedProofItems[0]?.url || (typeof afterPhotoBase64 === 'string' && !afterPhotoBase64.startsWith('data:image/') ? afterPhotoBase64 : '');
+    const primaryAfterUrl = publicProofItems[0]?.url || (typeof afterPhotoBase64 === 'string' && !afterPhotoBase64.startsWith('data:image/') ? afterPhotoBase64 : '');
 
     let updatedTaskRecord: any = null;
     if (taskIndex !== -1) {
@@ -2460,7 +2512,7 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
         proofPhotoUrl: primaryAfterUrl || tasksList[taskIndex].proofPhotoUrl || tasksList[taskIndex].afterPhotoUrl,
         afterPhotoUrl: primaryAfterUrl || tasksList[taskIndex].afterPhotoUrl,
         beforePhotoUrl: beforePhotoUrl || tasksList[taskIndex].beforePhotoUrl,
-        proofPhotos: savedProofItems.length > 0 ? savedProofItems : (tasksList[taskIndex].proofPhotos || []),
+        proofPhotos: publicProofItems.length > 0 ? publicProofItems : (tasksList[taskIndex].proofPhotos || []),
         boyNotes: notes ?? tasksList[taskIndex].boyNotes ?? tasksList[taskIndex].notes,
         notes: notes ?? tasksList[taskIndex].notes,
       };
@@ -2482,7 +2534,7 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
         proofPhotoUrl: primaryAfterUrl,
         afterPhotoUrl: primaryAfterUrl,
         beforePhotoUrl: beforePhotoUrl,
-        proofPhotos: savedProofItems,
+        proofPhotos: publicProofItems,
         boyNotes: notes || '',
         notes: notes || '',
       };
@@ -2495,9 +2547,9 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
 
     res.json({
       success: true,
-      message: `Task completed! ${savedProofItems.length} completion photo(s) stored securely for 40 days.`,
+      message: `Task completed! ${publicProofItems.length} completion photo(s) stored securely for 40 days.`,
       task: updatedTaskRecord,
-      proofPhotos: savedProofItems,
+      proofPhotos: publicProofItems,
       uploadedAt: now,
       expiresAt: expiresAt,
       retentionDays: RETENTION_DAYS,
@@ -2526,12 +2578,13 @@ app.get('/api/completion-photos', (req, res) => {
       filtered = filtered.filter((p) => p.roomName?.toLowerCase() === String(roomName).toLowerCase());
     }
 
-    // Sort newest first
+    // Sort newest first & strip backupDataUrl
     filtered.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+    const publicPhotos = filtered.map(({ backupDataUrl, ...rest }) => rest);
 
     res.json({
       success: true,
-      photos: filtered,
+      photos: publicPhotos,
       totalCount: filtered.length,
       retentionPolicyDays: RETENTION_DAYS,
     });
@@ -2614,7 +2667,14 @@ app.post('/api/completion-photos/cleanup', requireAdmin, (req, res) => {
 // Tasks Getter & Updater for persistent database
 app.get('/api/tasks', (req, res) => {
   try {
-    const tasks = loadTasks();
+    // Ensure completion photos are restored if needed before serving tasks
+    loadCompletionPhotos();
+    const tasks = loadTasks().map((t: any) => ({
+      ...t,
+      proofPhotos: Array.isArray(t.proofPhotos)
+        ? t.proofPhotos.map(({ backupDataUrl, ...rest }: any) => rest)
+        : t.proofPhotos,
+    }));
     res.json({ success: true, tasks });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch tasks' });
@@ -2628,7 +2688,12 @@ app.put('/api/tasks/:id', (req, res) => {
     const tasks = loadTasks();
     const idx = tasks.findIndex((t: any) => t.id === id);
     if (idx !== -1) {
-      tasks[idx] = { ...tasks[idx], ...updated };
+      const merged = { ...tasks[idx], ...updated };
+      if (Array.isArray(updated.proofPhotos) && updated.proofPhotos.length === 0 && !updated.proofPhotoUrl) {
+        merged.proofPhotoUrl = null;
+        merged.afterPhotoUrl = null;
+      }
+      tasks[idx] = merged;
     } else {
       tasks.push({ id, ...updated });
     }
@@ -2706,19 +2771,23 @@ app.delete('/api/completion-photos/:photoId', (req, res) => {
             task.afterPhotoUrl = task.proofPhotos[0].url;
             task.proofPhotoUrl = task.proofPhotos[0].url;
           } else {
-            task.afterPhotoUrl = undefined;
-            task.proofPhotoUrl = undefined;
+            task.afterPhotoUrl = null;
+            task.proofPhotoUrl = null;
           }
         }
         if (
+          photoId.startsWith('single_') ||
           task.proofPhotoUrl === photoId ||
           task.proofPhotoUrl === decodedId ||
           (removedItem && task.proofPhotoUrl === removedItem.url) ||
           path.basename(task.proofPhotoUrl || '') === photoId ||
           path.basename(task.proofPhotoUrl || '') === decodedId
         ) {
-          task.proofPhotoUrl = task.proofPhotos?.[0]?.url || undefined;
-          task.afterPhotoUrl = task.proofPhotos?.[0]?.url || undefined;
+          if (photoId.startsWith('single_') && task.proofPhotoUrl) {
+            deletePhysicalUploadFile(task.proofPhotoUrl);
+          }
+          task.proofPhotoUrl = task.proofPhotos?.[0]?.url || null;
+          task.afterPhotoUrl = task.proofPhotos?.[0]?.url || null;
           tasksChanged = true;
         }
         if (task.id === taskId || (removedItem && task.id === removedItem.taskId)) {
@@ -2753,41 +2822,64 @@ app.delete('/api/tasks/:taskId/proof-photo', (req, res) => {
 
     const tasksList = loadTasks();
     const taskIdx = tasksList.findIndex((t: any) => t.id === taskId);
-    if (taskIdx === -1) {
-      return res.status(404).json({ error: 'Task not found' });
-    }
+    const existingTask = taskIdx !== -1 ? tasksList[taskIdx] : null;
 
-    const task = tasksList[taskIdx];
-    if (userRole !== 'admin' && userId && task.completedByUserId && task.completedByUserId !== userId) {
+    const allCompletionPhotos = loadCompletionPhotos();
+    const taskCompletionPhotos = allCompletionPhotos.filter((p: any) => p.taskId === taskId);
+
+    // Permission check
+    const ownerId = existingTask?.completedByUserId || taskCompletionPhotos[0]?.pantryBoyId;
+    if (userRole !== 'admin' && userId && ownerId && ownerId !== userId) {
       return res.status(403).json({ error: 'Permission denied to delete photos from this task.' });
     }
 
-    // Unlink all proof photo files
-    if (Array.isArray(task.proofPhotos)) {
-      task.proofPhotos.forEach((p: any) => {
-        if (p.url) deletePhysicalUploadFile(p.url);
-        if (p.fileName) deletePhysicalUploadFile(p.fileName);
-      });
+    // Unlink all proof photo files from task and completion_photos.json
+    if (existingTask) {
+      if (Array.isArray(existingTask.proofPhotos)) {
+        existingTask.proofPhotos.forEach((p: any) => {
+          if (p.url) deletePhysicalUploadFile(p.url);
+          if (p.fileName) deletePhysicalUploadFile(p.fileName);
+        });
+      }
+      if (existingTask.proofPhotoUrl) deletePhysicalUploadFile(existingTask.proofPhotoUrl);
+      if (existingTask.afterPhotoUrl) deletePhysicalUploadFile(existingTask.afterPhotoUrl);
     }
-    if (task.proofPhotoUrl) deletePhysicalUploadFile(task.proofPhotoUrl);
-    if (task.afterPhotoUrl) deletePhysicalUploadFile(task.afterPhotoUrl);
+
+    taskCompletionPhotos.forEach((p: any) => {
+      if (p.url) deletePhysicalUploadFile(p.url);
+      if (p.fileName) deletePhysicalUploadFile(p.fileName);
+    });
 
     // Clear from completion_photos.json
-    const allCompletionPhotos = loadCompletionPhotos();
     const remainingPhotos = allCompletionPhotos.filter((p: any) => p.taskId !== taskId);
     saveCompletionPhotos(remainingPhotos);
 
-    // Reset task photo fields
-    task.proofPhotos = [];
-    task.proofPhotoUrl = undefined;
-    task.afterPhotoUrl = undefined;
-    tasksList[taskIdx] = task;
+    // Reset or persist cleared task photo fields in tasks.json
+    let updatedTask: any;
+    if (taskIdx !== -1) {
+      updatedTask = {
+        ...existingTask,
+        proofPhotos: [],
+        proofPhotoUrl: null,
+        afterPhotoUrl: null,
+      };
+      tasksList[taskIdx] = updatedTask;
+    } else {
+      updatedTask = {
+        id: taskId,
+        proofPhotos: [],
+        proofPhotoUrl: null,
+        afterPhotoUrl: null,
+        updatedAt: new Date().toISOString(),
+      };
+      tasksList.push(updatedTask);
+    }
     saveTasks(tasksList);
 
     res.json({
       success: true,
       message: 'Task proof photos deleted permanently.',
-      task,
+      task: updatedTask,
     });
   } catch (err: any) {
     console.error('Error deleting task proof photos:', err);
@@ -2992,6 +3084,7 @@ async function startServer() {
       server: {
         middlewareMode: true,
         hmr: false,
+        ws: false,
       },
       appType: 'spa',
     });

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { DailyTask, User, Language, CompletionPhotoItem } from '../types';
 import { AITrainingService } from '../services/aiTrainingService';
 import { StorageService } from '../services/storageService';
+import { ReferenceImage } from './ReferenceImage';
+import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
 import {
   CheckCircle2,
   Clock,
@@ -68,44 +70,64 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
   const [retentionStatus, setRetentionStatus] = useState<RetentionAuditStatus | null>(null);
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    photoId: string;
+    taskId: string;
+    photoUrl?: string;
+    roomName?: string;
+    isTaskLevel?: boolean;
+  } | null>(null);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [deletePhotoError, setDeletePhotoError] = useState<string | null>(null);
 
-  // Delete individual completion photo
-  const handleDeleteCompletionPhoto = async (photoId: string, taskId: string, e?: React.MouseEvent) => {
+  // Trigger in-app confirmation modal for deleting individual or task-level completion photo
+  const handleDeleteCompletionPhoto = (
+    photoId: string,
+    taskId: string,
+    e?: React.MouseEvent,
+    photoUrl?: string,
+    roomName?: string,
+    isTaskLevel?: boolean
+  ) => {
     if (e) e.stopPropagation();
-    const confirmMsg =
-      language === 'hi'
-        ? 'क्या आप इस कार्य समाप्ति फोटो को सर्वर से हमेशा के लिए हटाना चाहते हैं?'
-        : 'Are you sure you want to permanently delete this completion photo from server storage?';
+    setDeletePhotoError(null);
+    setDeleteConfirmTarget({ photoId, taskId, photoUrl, roomName, isTaskLevel });
+  };
 
-    if (!window.confirm(confirmMsg)) return;
+  const confirmDeleteCompletionPhoto = async () => {
+    if (!deleteConfirmTarget) return;
+    const { photoId, taskId, isTaskLevel } = deleteConfirmTarget;
+    setIsDeletingPhoto(true);
+    setDeletePhotoError(null);
 
     try {
-      const res = await AITrainingService.deleteCompletionPhoto({
-        photoId,
-        taskId,
-        user: currentUser,
-      });
+      const useTaskLevel = isTaskLevel || !photoId || photoId.startsWith('single_');
+      const res = useTaskLevel
+        ? await AITrainingService.deleteTaskProofPhotos({ taskId, user: currentUser })
+        : await AITrainingService.deleteCompletionPhoto({ photoId, taskId, user: currentUser });
 
       if (res.success) {
-        // Clear from local client storage immediately
-        StorageService.deleteCompletionPhotoFromStorage(photoId, taskId);
+        StorageService.deleteCompletionPhotoFromStorage(useTaskLevel ? '' : photoId, taskId);
 
-        // Update task locally
         const targetTask = tasks.find((t) => t.id === taskId);
         if (targetTask) {
-          const remainingPhotos = (targetTask.proofPhotos || []).filter((p) => p.id !== photoId);
+          const remainingPhotos = useTaskLevel
+            ? []
+            : (targetTask.proofPhotos || []).filter((p) => p.id !== photoId);
           const updated: DailyTask = {
             ...targetTask,
             proofPhotos: remainingPhotos,
             proofPhotoUrl: remainingPhotos.length > 0 ? remainingPhotos[0].url : undefined,
+            afterPhotoUrl: remainingPhotos.length > 0 ? remainingPhotos[0].url : undefined,
           };
           onUpdateTask(updated);
         }
 
-        if (zoomPhoto?.photoId === photoId) {
+        if (zoomPhoto && (useTaskLevel || zoomPhoto.photoId === photoId)) {
           setZoomPhoto(null);
         }
 
+        setDeleteConfirmTarget(null);
         setCleanupMessage(
           language === 'hi'
             ? 'फोटो सफलतापूर्वक हटा दी गई है।'
@@ -113,9 +135,13 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
         );
         setTimeout(() => setCleanupMessage(null), 4000);
         await fetchRetentionAudit();
+      } else {
+        setDeletePhotoError(language === 'hi' ? 'फोटो हटाने में त्रुटि हुई।' : 'Failed to delete photo.');
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to delete photo');
+      setDeletePhotoError(err.message || 'Failed to delete photo');
+    } finally {
+      setIsDeletingPhoto(false);
     }
   };
 
@@ -419,22 +445,29 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                     <div
                       className="relative aspect-4/3 bg-slate-200 overflow-hidden cursor-pointer group rounded-lg"
                       onClick={() =>
+                        task.referencePhotoUrl &&
                         setZoomPhoto({
                           url: task.referencePhotoUrl,
                           caption: `${language === 'hi' ? 'ऑफिस मानक संदर्भ' : 'Official Target Standard'}: ${task.roomNameEn}`,
                         })
                       }
                     >
-                      <img
-                        src={task.referencePhotoUrl}
-                        alt="Reference target"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover:scale-102 transition-transform"
-                      />
-                      <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-black/80 backdrop-blur-xs text-white rounded text-[10px] font-bold">
+                      {task.referencePhotoUrl ? (
+                        <ReferenceImage
+                          src={task.referencePhotoUrl}
+                          alt="Reference target"
+                          language={language}
+                          className="w-full h-full object-cover group-hover:scale-102 transition-transform"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                          <Camera className="w-6 h-6" />
+                        </div>
+                      )}
+                      <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-black/80 backdrop-blur-xs text-white rounded text-[10px] font-bold z-20">
                         {language === 'hi' ? 'मानक संदर्भ' : 'Target Standard'}
                       </div>
-                      <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-blue-900/80 text-blue-200 rounded text-[9px] font-bold">
+                      <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-blue-900/80 text-blue-200 rounded text-[9px] font-bold z-20">
                         {language === 'hi' ? 'स्थायी' : 'Permanent'}
                       </div>
                     </div>
@@ -454,9 +487,10 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                       }
                     >
                       {primaryProof?.url ? (
-                        <img
+                        <ReferenceImage
                           src={primaryProof.url}
                           alt="Proof"
+                          language={language}
                           className="w-full h-full object-cover group-hover:scale-102 transition-transform"
                         />
                       ) : null}
@@ -465,7 +499,15 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                       {canDelete && primaryProof && (
                         <button
                           type="button"
-                          onClick={(e) => handleDeleteCompletionPhoto(primaryProof.id, task.id, e)}
+                          onClick={(e) =>
+                            handleDeleteCompletionPhoto(
+                              primaryProof.id,
+                              task.id,
+                              e,
+                              primaryProof.url,
+                              language === 'hi' ? task.roomNameHi : task.roomNameEn
+                            )
+                          }
                           className="absolute top-1.5 left-1.5 p-1.5 rounded-md bg-red-600/90 hover:bg-red-700 text-white flex items-center justify-center cursor-pointer transition-colors shadow-xs z-10"
                           title={language === 'hi' ? 'यह फोटो हटाएं' : 'Delete photo'}
                         >
@@ -526,7 +568,15 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                             {canDelete && photo.id && (
                               <button
                                 type="button"
-                                onClick={(e) => handleDeleteCompletionPhoto(photo.id, task.id, e)}
+                                onClick={(e) =>
+                                  handleDeleteCompletionPhoto(
+                                    photo.id,
+                                    task.id,
+                                    e,
+                                    photo.url,
+                                    language === 'hi' ? task.roomNameHi : task.roomNameEn
+                                  )
+                                }
                                 className="absolute top-1 right-1 p-1 rounded bg-red-600/90 hover:bg-red-700 text-white flex items-center justify-center cursor-pointer transition-colors shadow-xs z-10"
                                 title={language === 'hi' ? 'फोटो हटाएं' : 'Delete photo'}
                               >
@@ -685,6 +735,24 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>{language === 'hi' ? 'पुनः कराएं' : 'Request Rework'}</span>
                       </button>
+                      <button
+                        type="button"
+                        onClick={(e) =>
+                          handleDeleteCompletionPhoto(
+                            '',
+                            task.id,
+                            e,
+                            primaryProof?.url || task.proofPhotoUrl,
+                            language === 'hi' ? task.roomNameHi : task.roomNameEn,
+                            true
+                          )
+                        }
+                        className="py-2 px-3 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors min-h-[38px]"
+                        title={language === 'hi' ? 'सभी प्रमाण फोटो हटाएं' : 'Delete all task proof photos'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{language === 'hi' ? 'हटाएं' : 'Delete'}</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -725,7 +793,9 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
               {zoomPhoto.canDelete && zoomPhoto.photoId && zoomPhoto.taskId && (
                 <button
                   type="button"
-                  onClick={() => handleDeleteCompletionPhoto(zoomPhoto.photoId!, zoomPhoto.taskId!)}
+                  onClick={() =>
+                    handleDeleteCompletionPhoto(zoomPhoto.photoId!, zoomPhoto.taskId!, undefined, zoomPhoto.url)
+                  }
                   className="text-xs text-white font-bold bg-red-600 hover:bg-red-700 px-4 py-1.5 rounded-full cursor-pointer transition-colors flex items-center gap-1.5 shadow-md"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -742,6 +812,23 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
           </div>
         </div>
       )}
+
+      {/* In-App Delete Confirmation Modal */}
+      <DeletePhotoConfirmModal
+        isOpen={deleteConfirmTarget !== null}
+        onClose={() => {
+          if (!isDeletingPhoto) {
+            setDeleteConfirmTarget(null);
+            setDeletePhotoError(null);
+          }
+        }}
+        onConfirm={confirmDeleteCompletionPhoto}
+        isDeleting={isDeletingPhoto}
+        language={language}
+        photoUrl={deleteConfirmTarget?.photoUrl}
+        roomName={deleteConfirmTarget?.roomName}
+        error={deletePhotoError}
+      />
 
     </div>
   );

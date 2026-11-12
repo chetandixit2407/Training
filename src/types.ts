@@ -156,6 +156,7 @@ export interface DailyTask {
   completedByName?: string;
   completedAt?: string;
   proofPhotoUrl?: string;
+  afterPhotoUrl?: string;
   beforePhotoUrl?: string;
   proofPhotos?: CompletionPhotoItem[]; // Multiple task completion photos (40-day retention)
   boyNotes?: string;

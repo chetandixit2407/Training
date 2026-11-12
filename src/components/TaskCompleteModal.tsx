@@ -1,21 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DailyTask, User, Language } from '../types';
-import { fileToDataUrl } from '../services/storageService';
 import { VoiceButton } from './VoiceButton';
+import { ReferenceImage } from './ReferenceImage';
 import {
   X,
   Camera,
-  Upload,
   CheckCircle2,
   Clock,
   MapPin,
   Image as ImageIcon,
-  Loader2,
   AlertCircle,
   Plus,
   Trash2,
   ShieldCheck,
-  Calendar,
+  RefreshCw,
+  RotateCcw,
 } from 'lucide-react';
 
 export interface CompletionPhotoDraft {
@@ -51,13 +50,182 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
   const [completionPhotos, setCompletionPhotos] = useState<CompletionPhotoDraft[]>([]);
   const [beforePhoto, setBeforePhoto] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewZoom, setPreviewZoom] = useState<string | null>(null);
 
-  const multiPhotoInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const beforeInputRef = useRef<HTMLInputElement>(null);
+  // Live Camera (getUserMedia) state
+  const [cameraTarget, setCameraTarget] = useState<'proof' | 'before' | null>(null);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const stopCameraStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const startCamera = useCallback(
+    async (mode: 'environment' | 'user') => {
+      stopCameraStream();
+      setCameraError(null);
+      setCapturedPreview(null);
+      setIsStartingCamera(true);
+
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setIsStartingCamera(false);
+        setCameraError(
+          language === 'hi'
+            ? 'इस ब्राउज़र या डिवाइस में लाइव कैमरा उपलब्ध नहीं है।'
+            : 'Live camera (getUserMedia) is not supported on this browser or device.'
+        );
+        return;
+      }
+
+      try {
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: mode },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          });
+        } catch {
+          // Fallback to any available video device
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+      } catch (err: any) {
+        const msg = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
+          ? language === 'hi'
+            ? 'कैमरा अनुमति अस्वीकृत है। कृपया ब्राउज़र सेटिंग्स में कैमरा अनुमति दें और पुनः प्रयास करें।'
+            : 'Camera permission was denied. Please allow camera access in your browser and try again.'
+          : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
+          ? language === 'hi'
+            ? 'कोई कैमरा डिवाइस नहीं मिला।'
+            : 'No camera device found on this device.'
+          : language === 'hi'
+            ? 'कैमरा शुरू करने में समस्या आई। कृपया पुनः प्रयास करें।'
+            : `Unable to start camera: ${err?.message || 'Permission or hardware error'}`;
+        setCameraError(msg);
+      } finally {
+        setIsStartingCamera(false);
+      }
+    },
+    [language, stopCameraStream]
+  );
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopCameraStream();
+      setCameraTarget(null);
+      setCapturedPreview(null);
+      setCameraError(null);
+    }
+    return () => {
+      stopCameraStream();
+    };
+  }, [isOpen, stopCameraStream]);
+
+  const handleOpenCamera = (target: 'proof' | 'before') => {
+    setError(null);
+    setCameraTarget(target);
+    startCamera(facingMode);
+  };
+
+  const handleCloseCamera = () => {
+    stopCameraStream();
+    setCameraTarget(null);
+    setCapturedPreview(null);
+    setCameraError(null);
+  };
+
+  const handleSwitchCamera = () => {
+    const next = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(next);
+    startCamera(next);
+  };
+
+  const handleCaptureFrame = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setCameraError(
+        language === 'hi'
+          ? 'कैमरा फ्रेम अभी तैयार नहीं है। कृपया एक सेकंड प्रतीक्षा करें।'
+          : 'Camera feed is not ready yet. Please wait a moment.'
+      );
+      return;
+    }
+
+    const maxDim = 1200;
+    let width = video.videoWidth;
+    let height = video.videoHeight;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    stopCameraStream();
+    setCapturedPreview(dataUrl);
+  };
+
+  const handleRetake = () => {
+    setCapturedPreview(null);
+    startCamera(facingMode);
+  };
+
+  const handleConfirmCapturedPhoto = () => {
+    if (!capturedPreview) return;
+
+    if (cameraTarget === 'before') {
+      setBeforePhoto(capturedPreview);
+    } else {
+      const angleNum = completionPhotos.length + 1;
+      setCompletionPhotos((prev) => [
+        ...prev,
+        {
+          id: `draft_cam_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          photoBase64: capturedPreview,
+          angleLabel:
+            language === 'hi'
+              ? `लाइव कैमरा एंगल #${angleNum}`
+              : `Live Camera Angle #${angleNum}`,
+          caption: '',
+        },
+      ]);
+    }
+
+    handleCloseCamera();
+  };
 
   if (!isOpen || !task) return null;
 
@@ -68,94 +236,6 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
     : 'Pantry Boy';
   const currentBoyId = currentUser?.id || 'pb-101';
   const currentTimeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-  // Handle multiple photo files upload
-  const handleMultipleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    try {
-      setIsProcessing(true);
-      setError(null);
-      const newDrafts: CompletionPhotoDraft[] = [];
-
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const dataUrl = await fileToDataUrl(file);
-        const angleNum = completionPhotos.length + newDrafts.length + 1;
-        newDrafts.push({
-          id: `draft_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
-          photoBase64: dataUrl,
-          angleLabel:
-            language === 'hi'
-              ? `एंगल #${angleNum}: ${file.name.slice(0, 15)}`
-              : `Angle #${angleNum}: ${file.name.slice(0, 15)}`,
-          caption: '',
-        });
-      }
-
-      setCompletionPhotos((prev) => [...prev, ...newDrafts]);
-    } catch (err) {
-      setError(
-        language === 'hi'
-          ? 'फोटो लोड करने में त्रुटि हुई। कृपया दोबारा प्रयास करें।'
-          : 'Error loading photo(s). Please try again.'
-      );
-    } finally {
-      setIsProcessing(false);
-      if (multiPhotoInputRef.current) multiPhotoInputRef.current.value = '';
-    }
-  };
-
-  // Handle single camera capture
-  const handleCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsProcessing(true);
-      setError(null);
-      const dataUrl = await fileToDataUrl(file);
-      const angleNum = completionPhotos.length + 1;
-
-      setCompletionPhotos((prev) => [
-        ...prev,
-        {
-          id: `draft_cam_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          photoBase64: dataUrl,
-          angleLabel:
-            language === 'hi'
-              ? `कैमरा एंगल #${angleNum}`
-              : `Camera Angle #${angleNum}`,
-          caption: '',
-        },
-      ]);
-    } catch (err) {
-      setError(
-        language === 'hi'
-          ? 'कैमरा फोटो लोड करने में त्रुटि हुई।'
-          : 'Error capturing camera photo.'
-      );
-    } finally {
-      setIsProcessing(false);
-      if (cameraInputRef.current) cameraInputRef.current.value = '';
-    }
-  };
-
-  const handleBeforeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsProcessing(true);
-      const dataUrl = await fileToDataUrl(file);
-      setBeforePhoto(dataUrl);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const removePhotoDraft = (id: string) => {
     setCompletionPhotos((prev) => prev.filter((p) => p.id !== id));
@@ -172,8 +252,8 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
     if (completionPhotos.length === 0) {
       setError(
         language === 'hi'
-          ? 'कृपया काम पूरा होने का कम से कम 1 फोटो (Proof Photo) अपलोड करें।'
-          : 'Please capture or upload at least 1 completion proof photo.'
+          ? 'कृपया लाइव कैमरा से कम से कम 1 प्रमाण फोटो (Proof Photo) खींचें।'
+          : 'Please capture at least 1 live camera proof photo.'
       );
       return;
     }
@@ -185,6 +265,7 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
     }));
 
     const primaryPhotoUrl = completionPhotos[0]?.photoBase64 || '';
+    stopCameraStream();
     onComplete(task.id, payloadPhotos, primaryPhotoUrl, beforePhoto || undefined, notes);
     onClose();
   };
@@ -192,7 +273,6 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/65 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh]">
-        
         {/* Header */}
         <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
           <div>
@@ -210,7 +290,10 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
             </h3>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => {
+              stopCameraStream();
+              onClose();
+            }}
             className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -219,7 +302,6 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
 
         {/* Scrollable Body */}
         <div className="p-5 overflow-y-auto space-y-5">
-          
           {/* Instructions + Audio */}
           <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4">
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -246,14 +328,18 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
             </label>
             <div className="aspect-16/9 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 relative group">
               {task.referencePhotoUrl ? (
-                <img
+                <ReferenceImage
                   src={task.referencePhotoUrl}
                   alt="Reference standard"
-                  referrerPolicy="no-referrer"
+                  language={language}
                   className="w-full h-full object-cover"
                 />
-              ) : null}
-              <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/75 backdrop-blur-xs text-white rounded-md text-[11px] font-bold">
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                  <Camera className="w-8 h-8" />
+                </div>
+              )}
+              <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/75 backdrop-blur-xs text-white rounded-md text-[11px] font-bold z-20">
                 {language === 'hi' ? 'ऑफिस मानक लक्ष्य' : 'Official Target Standard'}
               </div>
             </div>
@@ -266,28 +352,132 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
             </div>
             <div className="text-xs text-emerald-950">
               <div className="font-extrabold flex items-center gap-1">
-                <span>{language === 'hi' ? '40-दिवसीय सुरक्षित फोटो संग्रह नीति' : '40-Day Secure Photo Retention Policy'}</span>
+                <span>{language === 'hi' ? 'केवल लाइव कैमरा प्रमाण (40-दिवसीय संग्रह)' : 'Live Camera-Only Proof (40-Day Retention)'}</span>
                 <span className="px-1.5 py-0.2 bg-emerald-200 text-emerald-900 rounded font-black text-[10px]">
-                  40 DAYS
+                  LIVE CAMERA
                 </span>
               </div>
               <p className="text-emerald-800 mt-0.5 leading-relaxed">
                 {language === 'hi'
-                  ? `हर फोटो आपके नाम (${currentBoyName}), आईडी (${currentBoyId}) और सटीक समय (${currentTimeString}) के साथ सर्वर में सुरक्षित 40 दिनों के लिए सेव होगी, जिसके बाद स्वतः डिलीट हो जाएगी।`
-                  : `Every photo is permanently archived with your identity (${currentBoyName}), exact timestamp (${currentTimeString}), and room metadata in office storage for 40 days, then automatically purged.`}
+                  ? `प्रमाण केवल लाइव कैमरा से खींचा जा सकता है (गैलरी अपलोड बंद है)। हर फोटो आपके नाम (${currentBoyName}) और समय (${currentTimeString}) के साथ सर्वर पर सुरक्षित रहेगी।`
+                  : `Proof photos must be captured in real time using your device camera (gallery uploads disabled). Archived with your identity (${currentBoyName}) and timestamp (${currentTimeString}).`}
               </p>
             </div>
           </div>
 
-          {/* Multiple Completion Photos Upload Section */}
+          {/* Live Camera Viewfinder (when active) */}
+          {cameraTarget !== null && (
+            <div className="bg-slate-950 rounded-2xl border-2 border-emerald-500 overflow-hidden shadow-lg">
+              <div className="px-4 py-2.5 bg-slate-900 flex items-center justify-between text-white">
+                <div className="flex items-center gap-2 text-xs font-bold">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>
+                    {cameraTarget === 'before'
+                      ? (language === 'hi' ? 'लाइव कैमरा: सफाई से पहले की फोटो' : 'Live Camera: Before Cleaning Photo')
+                      : (language === 'hi' ? 'लाइव कैमरा: कार्य प्रमाण फोटो' : 'Live Camera: Task Proof Photo')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!capturedPreview && !cameraError && (
+                    <button
+                      type="button"
+                      onClick={handleSwitchCamera}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{language === 'hi' ? 'कैमरा बदलें' : 'Switch'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCloseCamera}
+                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative aspect-16/10 bg-black flex items-center justify-center">
+                {cameraError ? (
+                  <div className="p-6 text-center text-white space-y-3 max-w-md">
+                    <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
+                    <p className="text-xs font-semibold text-rose-200">{cameraError}</p>
+                    <button
+                      type="button"
+                      onClick={() => startCamera(facingMode)}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                    >
+                      {language === 'hi' ? 'कैमरा पुनः प्रयास करें' : 'Retry Camera'}
+                    </button>
+                  </div>
+                ) : capturedPreview ? (
+                  <img src={capturedPreview} alt="Captured preview" className="w-full h-full object-contain" />
+                ) : (
+                  <>
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                    {isStartingCamera && (
+                      <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white text-xs font-bold gap-2">
+                        <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
+                        <span>{language === 'hi' ? 'कैमरा शुरू हो रहा है...' : 'Starting live camera...'}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {!cameraError && (
+                <div className="p-3 bg-slate-900 flex items-center justify-center gap-3">
+                  {capturedPreview ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleRetake}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>{language === 'hi' ? 'दोबारा खींचें (Retake)' : 'Retake'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmCapturedPhoto}
+                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{language === 'hi' ? 'फोटो जोड़ें (Use Photo)' : 'Use This Photo'}</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleCaptureFrame}
+                      disabled={isStartingCamera}
+                      className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black flex items-center gap-2 cursor-pointer shadow-md"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>{language === 'hi' ? 'फोटो खींचें (Capture)' : 'Capture Photo'}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Multiple Completion Photos Section (Camera-only) */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <Camera className="w-4 h-4 text-emerald-600" />
                 <span>
                   {language === 'hi'
-                    ? `कार्य संपन्नता के फोटो (Multiple Photos) * (${completionPhotos.length} संलग्न)`
-                    : `Completion Proof Photos * (${completionPhotos.length} Attached)`}
+                    ? `लाइव कैमरा प्रमाण फोटो * (${completionPhotos.length} संलग्न)`
+                    : `Live Camera Proof Photos * (${completionPhotos.length} Captured)`}
                 </span>
               </label>
 
@@ -302,25 +492,6 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
               )}
             </div>
 
-            {/* Hidden file inputs */}
-            <input
-              ref={multiPhotoInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleMultipleFilesChange}
-            />
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={handleCameraCapture}
-            />
-
-            {/* Grid of Captured Completion Photos */}
             {completionPhotos.length > 0 ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -354,7 +525,6 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
                         </button>
                       </div>
 
-                      {/* Photo Label input */}
                       <div className="p-1.5 bg-slate-900 border-t border-slate-800">
                         <input
                           type="text"
@@ -368,105 +538,64 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
                   ))}
                 </div>
 
-                {/* Add More Photos Buttons Bar */}
-                <div className="flex items-center gap-2 pt-1">
+                {cameraTarget === null && (
                   <button
                     type="button"
-                    onClick={() => cameraInputRef.current?.click()}
-                    disabled={isProcessing}
-                    className="flex-1 py-2 px-3 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors min-h-[40px]"
+                    onClick={() => handleOpenCamera('proof')}
+                    className="w-full py-2.5 px-3 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors min-h-[40px]"
                   >
                     <Camera className="w-4 h-4 text-emerald-700" />
-                    <span>{language === 'hi' ? '+ और फोटो खींचें (Camera)' : '+ Snap Another Photo'}</span>
+                    <span>{language === 'hi' ? '+ लाइव कैमरा से और फोटो खींचें' : '+ Capture Another Angle (Live Camera)'}</span>
                   </button>
+                )}
+              </div>
+            ) : (
+              cameraTarget !== 'proof' && (
+                <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/20 rounded-2xl p-6 text-center transition-all flex flex-col items-center justify-center min-h-[160px]">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 shadow-xs">
+                    <Camera className="w-7 h-7" />
+                  </div>
+                  <span className="font-black text-sm text-slate-900 block">
+                    {language === 'hi'
+                      ? 'लाइव कैमरा से कार्य पूरा होने की फोटो खींचें'
+                      : 'Capture Live Camera Proof Photos'}
+                  </span>
+                  <span className="text-xs text-slate-500 mt-1 max-w-md">
+                    {language === 'hi'
+                      ? 'गैलरी या पुरानी फोटो की अनुमति नहीं है। केवल लाइव कैमरा से फोटो खींचकर जमा करें।'
+                      : 'Gallery uploads are disabled. Capture real-time photos directly using your device camera.'}
+                  </span>
 
                   <button
                     type="button"
-                    onClick={() => multiPhotoInputRef.current?.click()}
-                    disabled={isProcessing}
-                    className="flex-1 py-2 px-3 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors min-h-[40px]"
+                    onClick={() => handleOpenCamera('proof')}
+                    className="mt-4 py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors min-h-[42px]"
                   >
-                    <Upload className="w-4 h-4 text-slate-700" />
-                    <span>{language === 'hi' ? '+ गैलरी से जोड़ें' : '+ Select More Files'}</span>
+                    <Camera className="w-4 h-4" />
+                    <span>{language === 'hi' ? 'लाइव कैमरा खोलें' : 'Open Live Camera'}</span>
                   </button>
                 </div>
-              </div>
-            ) : (
-              /* Empty Upload Box */
-              <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/20 rounded-2xl p-6 text-center transition-all flex flex-col items-center justify-center min-h-[160px]">
-                {isProcessing ? (
-                  <div className="flex flex-col items-center py-4">
-                    <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-2" />
-                    <span className="text-xs text-slate-600 font-semibold">
-                      {language === 'hi' ? 'फोटो प्रोसेस हो रहा है...' : 'Processing photos...'}
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3 shadow-xs">
-                      <Camera className="w-7 h-7" />
-                    </div>
-                    <span className="font-black text-sm text-slate-900 block">
-                      {language === 'hi'
-                        ? 'कार्य पूरा होने के फोटो अपलोड करें (Multiple Photos)'
-                        : 'Capture or Upload Task Completion Photos'}
-                    </span>
-                    <span className="text-xs text-slate-500 mt-1 max-w-md">
-                      {language === 'hi'
-                        ? 'विभिन्न कोणों से फोटो खींचें: टेबल, कुर्सियां, पानी के गिलास, व कचरा पेटी। एक से अधिक फोटो एक साथ चुन सकते हैं।'
-                        : 'Capture multiple angles: table surface, water setup, chair alignment & dustbin. You can upload multiple photos.'}
-                    </span>
-
-                    <div className="flex items-center gap-2 mt-4">
-                      <button
-                        type="button"
-                        onClick={() => cameraInputRef.current?.click()}
-                        className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors min-h-[42px]"
-                      >
-                        <Camera className="w-4 h-4" />
-                        <span>{language === 'hi' ? 'कैमरा से फोटो लें' : 'Take Camera Photo'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => multiPhotoInputRef.current?.click()}
-                        className="py-2.5 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors min-h-[42px]"
-                      >
-                        <Upload className="w-4 h-4" />
-                        <span>{language === 'hi' ? 'फ़ाइलें चुनें' : 'Choose Files'}</span>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+              )
             )}
           </div>
 
-          {/* Optional Before Photo */}
+          {/* Optional Before Photo (Camera-only) */}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
-                <span>{language === 'hi' ? 'सफाई से पहले का फोटो (वैकल्पिक Before Photo)' : 'Optional Before Cleaning Photo'}</span>
+                <span>{language === 'hi' ? 'सफाई से पहले का फोटो (वैकल्पिक लाइव कैमरा)' : 'Optional Before Cleaning Photo (Live Camera)'}</span>
               </label>
               {beforePhoto && (
                 <button
                   type="button"
                   onClick={() => setBeforePhoto(null)}
-                  className="text-[11px] text-red-600 hover:underline font-semibold"
+                  className="text-[11px] text-red-600 hover:underline font-semibold cursor-pointer"
                 >
                   {language === 'hi' ? 'हटाएं' : 'Remove'}
                 </button>
               )}
             </div>
-
-            <input
-              ref={beforeInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleBeforeFileChange}
-            />
 
             {beforePhoto ? (
               <div className="h-24 w-36 rounded-lg overflow-hidden border border-slate-300 relative">
@@ -478,11 +607,11 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
             ) : (
               <button
                 type="button"
-                onClick={() => beforeInputRef.current?.click()}
+                onClick={() => handleOpenCamera('before')}
                 className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 py-1.5 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>{language === 'hi' ? 'सफाई से पहले की फोटो जोड़ें' : 'Add Before Photo'}</span>
+                <span>{language === 'hi' ? 'लाइव कैमरा से Before फोटो लें' : 'Capture Before Photo'}</span>
               </button>
             )}
           </div>
@@ -511,14 +640,16 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
               <span>{error}</span>
             </div>
           )}
-
         </div>
 
         {/* Footer Actions */}
         <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              stopCameraStream();
+              onClose();
+            }}
             className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition-colors cursor-pointer min-h-[44px]"
           >
             {language === 'hi' ? 'रद्द करें' : 'Cancel'}
@@ -527,7 +658,7 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={completionPhotos.length === 0 || isProcessing}
+            disabled={completionPhotos.length === 0}
             className={`flex-1 py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all cursor-pointer min-h-[48px] shadow-sm ${
               completionPhotos.length > 0
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
@@ -537,12 +668,11 @@ export const TaskCompleteModal: React.FC<TaskCompleteModalProps> = ({
             <CheckCircle2 className="w-5 h-5" />
             <span>
               {language === 'hi'
-                ? `कार्य संपन्न करें (${completionPhotos.length} फोटो के साथ)`
-                : `Submit & Complete (${completionPhotos.length} Photo${completionPhotos.length > 1 ? 's' : ''})`}
+                ? `प्रमाण जमा करें (${completionPhotos.length} फोटो)`
+                : `Submit Proof & Complete (${completionPhotos.length} Photo${completionPhotos.length > 1 ? 's' : ''})`}
             </span>
           </button>
         </div>
-
       </div>
 
       {/* Zoom Modal */}

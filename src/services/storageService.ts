@@ -224,7 +224,15 @@ export const StorageService = {
           serverTasks.forEach((st) => {
             const idx = mergedTasks.findIndex((lt) => lt.id === st.id);
             if (idx !== -1) {
-              mergedTasks[idx] = { ...mergedTasks[idx], ...st };
+              const merged = { ...mergedTasks[idx], ...st };
+              if (Array.isArray(st.proofPhotos) && st.proofPhotos.length === 0 && !st.proofPhotoUrl) {
+                merged.proofPhotos = [];
+                merged.proofPhotoUrl = undefined;
+                merged.afterPhotoUrl = undefined;
+                delete photoMemoryCache[`task_proof_${st.id}`];
+                PhotoStorageDB.deletePhoto(`task_proof_${st.id}`);
+              }
+              mergedTasks[idx] = merged;
             } else {
               mergedTasks.push(st);
             }
@@ -695,21 +703,43 @@ export const StorageService = {
 
   // Delete task completion photo from client storage
   deleteCompletionPhotoFromStorage(photoId: string, taskId?: string): void {
-    PhotoStorageDB.deletePhoto(`task_proof_${photoId}`);
-    delete photoMemoryCache[`task_proof_${photoId}`];
+    if (photoId) {
+      PhotoStorageDB.deletePhoto(`task_proof_${photoId}`);
+      delete photoMemoryCache[`task_proof_${photoId}`];
+    }
+    if (taskId && (!photoId || photoId.startsWith('single_'))) {
+      PhotoStorageDB.deletePhoto(`task_proof_${taskId}`);
+      delete photoMemoryCache[`task_proof_${taskId}`];
+    }
     const tasks = this.getTasks();
     let changed = false;
     tasks.forEach((t) => {
       if (!taskId || t.id === taskId) {
-        if (Array.isArray(t.proofPhotos)) {
+        if (!photoId || photoId.startsWith('single_')) {
+          t.proofPhotos = [];
+          t.proofPhotoUrl = undefined;
+          t.afterPhotoUrl = undefined;
+          PhotoStorageDB.deletePhoto(`task_proof_${t.id}`);
+          delete photoMemoryCache[`task_proof_${t.id}`];
+          changed = true;
+        } else if (Array.isArray(t.proofPhotos)) {
           const prevLen = t.proofPhotos.length;
           t.proofPhotos = t.proofPhotos.filter((p) => p.id !== photoId && p.url !== photoId);
           if (t.proofPhotos.length !== prevLen) {
             changed = true;
-            t.proofPhotoUrl = t.proofPhotos.length > 0 ? t.proofPhotos[0].url : undefined;
+            const nextUrl = t.proofPhotos.length > 0 ? t.proofPhotos[0].url : undefined;
+            t.proofPhotoUrl = nextUrl;
+            t.afterPhotoUrl = nextUrl;
+            if (!nextUrl) {
+              PhotoStorageDB.deletePhoto(`task_proof_${t.id}`);
+              delete photoMemoryCache[`task_proof_${t.id}`];
+            }
           }
         } else if (t.proofPhotoUrl === photoId) {
           t.proofPhotoUrl = undefined;
+          t.afterPhotoUrl = undefined;
+          PhotoStorageDB.deletePhoto(`task_proof_${t.id}`);
+          delete photoMemoryCache[`task_proof_${t.id}`];
           changed = true;
         }
       }
@@ -762,23 +792,39 @@ export const StorageService = {
     return tasks.map((task) => {
       const customRef = photoMemoryCache[`task_ref_${task.id}`];
       const customProof = photoMemoryCache[`task_proof_${task.id}`];
+      const normCat = normalizeRoomCategory(task.category || '');
+      const liveGallery = roomPhotosCache[normCat] || roomPhotosCache[task.category] || [];
+      const livePrimaryUrl = (liveGallery.find((p) => p.isPrimary) || liveGallery[0])?.url || '';
 
       let finalRef = task.referencePhotoUrl;
       if (finalRef && finalRef.startsWith('idb:task_ref_')) {
         const idbKey = finalRef.replace('idb:', '');
         finalRef = photoMemoryCache[idbKey] || '';
       }
+      if (livePrimaryUrl) {
+        finalRef = livePrimaryUrl;
+      }
 
-      let finalProof = task.proofPhotoUrl;
+      let finalProof = task.proofPhotoUrl || undefined;
       if (finalProof && finalProof.startsWith('idb:task_proof_')) {
         const idbKey = finalProof.replace('idb:', '');
         finalProof = photoMemoryCache[idbKey] || undefined;
       }
+      if (
+        finalProof &&
+        finalProof.startsWith('/uploads/reference/') &&
+        (!task.proofPhotos || task.proofPhotos.length === 0) &&
+        livePrimaryUrl
+      ) {
+        finalProof = livePrimaryUrl;
+      }
+
+      const proofExplicitlyCleared = Array.isArray(task.proofPhotos) && task.proofPhotos.length === 0 && !task.proofPhotoUrl;
 
       return {
         ...task,
         referencePhotoUrl: customRef !== undefined ? customRef : finalRef,
-        proofPhotoUrl: customProof !== undefined ? customProof : finalProof,
+        proofPhotoUrl: proofExplicitlyCleared ? undefined : (customProof !== undefined ? customProof : finalProof),
       };
     });
   },

@@ -75,6 +75,14 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   const [isLoadingCompletion, setIsLoadingCompletion] = useState(false);
   const [cleanupToast, setCleanupToast] = useState<string | null>(null);
   const [previewCompletionPhoto, setPreviewCompletionPhoto] = useState<CompletionPhotoItem | null>(null);
+  const [deleteCompletionTarget, setDeleteCompletionTarget] = useState<{
+    photoId: string;
+    taskId?: string;
+    photoUrl?: string;
+    roomName?: string;
+  } | null>(null);
+  const [isDeletingCompletion, setIsDeletingCompletion] = useState(false);
+  const [deleteCompletionError, setDeleteCompletionError] = useState<string | null>(null);
 
   // Room / Guide selector
   const [selectedGuideId, setSelectedGuideId] = useState<string>(() => guides[0]?.id || '');
@@ -202,19 +210,32 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
     }
   };
 
-  const handleDeleteCompletionItem = async (photoId: string, taskId?: string) => {
-    if (!window.confirm(language === 'hi' ? 'क्या आप इस समाप्ति फोटो को सर्वर से हमेशा के लिए हटाना चाहते हैं?' : 'Permanently delete this completion photo from server storage?')) return;
+  const handleDeleteCompletionItem = (photoId: string, taskId?: string, photoUrl?: string, roomName?: string) => {
+    setDeleteCompletionError(null);
+    setDeleteCompletionTarget({ photoId, taskId, photoUrl, roomName });
+  };
+
+  const confirmDeleteCompletionItem = async () => {
+    if (!deleteCompletionTarget) return;
+    const { photoId, taskId } = deleteCompletionTarget;
+    setIsDeletingCompletion(true);
+    setDeleteCompletionError(null);
     try {
       const res = await AITrainingService.deleteCompletionPhoto({ photoId, taskId, user: currentUser });
       if (res.success) {
         StorageService.deleteCompletionPhotoFromStorage(photoId, taskId);
         setAllCompletionPhotos((prev) => prev.filter((p) => p.id !== photoId));
         if (previewCompletionPhoto?.id === photoId) setPreviewCompletionPhoto(null);
+        setDeleteCompletionTarget(null);
         await loadCompletionAuditData();
         onRefreshData();
+      } else {
+        setDeleteCompletionError(language === 'hi' ? 'फोटो हटाने में त्रुटि हुई।' : 'Failed to delete completion photo.');
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to delete completion photo');
+      setDeleteCompletionError(err.message || 'Failed to delete completion photo');
+    } finally {
+      setIsDeletingCompletion(false);
     }
   };
 
@@ -1987,7 +2008,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => handleDeleteCompletionItem(photo.id, photo.taskId)}
+                          onClick={() => handleDeleteCompletionItem(photo.id, photo.taskId, photo.url, photo.roomName)}
                           className="text-xs font-bold text-red-600 hover:text-red-700 flex items-center gap-1 cursor-pointer"
                           title="Delete completion photo"
                         >
@@ -2059,7 +2080,14 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
 
               <button
                 type="button"
-                onClick={() => handleDeleteCompletionItem(previewCompletionPhoto.id, previewCompletionPhoto.taskId)}
+                onClick={() =>
+                  handleDeleteCompletionItem(
+                    previewCompletionPhoto.id,
+                    previewCompletionPhoto.taskId,
+                    previewCompletionPhoto.url,
+                    previewCompletionPhoto.roomName
+                  )
+                }
                 className="px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold transition-colors cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -2263,6 +2291,23 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         angleIndex={photoToDelete?.index}
         totalPhotos={photoToDelete?.totalPhotos}
         error={deletePhotoError}
+      />
+
+      {/* Delete Completion Photo Confirmation Modal */}
+      <DeletePhotoConfirmModal
+        isOpen={deleteCompletionTarget !== null}
+        onClose={() => {
+          if (!isDeletingCompletion) {
+            setDeleteCompletionTarget(null);
+            setDeleteCompletionError(null);
+          }
+        }}
+        onConfirm={confirmDeleteCompletionItem}
+        isDeleting={isDeletingCompletion}
+        language={language}
+        photoUrl={deleteCompletionTarget?.photoUrl}
+        roomName={deleteCompletionTarget?.roomName}
+        error={deleteCompletionError}
       />
 
     </div>
