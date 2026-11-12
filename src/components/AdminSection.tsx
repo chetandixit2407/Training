@@ -5,6 +5,7 @@ import { AITrainingService } from '../services/aiTrainingService';
 import { DEFAULT_USERS } from '../data/defaultData';
 import { VoiceButton } from './VoiceButton';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { DateHistoryModal } from './DateHistoryModal';
 import { ReferenceImage } from './ReferenceImage';
 import {
   Shield,
@@ -35,6 +36,7 @@ import {
   ChevronRight,
   Info,
   Check,
+  History,
 } from 'lucide-react';
 
 interface AdminSectionProps {
@@ -65,6 +67,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   language,
   onRefreshData,
 }) => {
+  const [showRoomHistoryModal, setShowRoomHistoryModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'galleries' | 'users' | 'create_task' | 'completion_photos'>('galleries');
 
   // Completion Photos & 40-Day Retention Audit state
@@ -1025,6 +1028,13 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowRoomHistoryModal(true)}
+                  className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <History className="w-4 h-4 text-amber-700" />
+                  <span>{language === 'hi' ? 'दिनांक-वार इतिहास' : 'Date History'}</span>
+                </button>
                 <button
                   onClick={() => multiFileInputRef.current?.click()}
                   className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
@@ -2309,6 +2319,26 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
         roomName={deleteCompletionTarget?.roomName}
         error={deleteCompletionError}
       />
+
+      {/* Date-Wise Room Reference Photo History Modal */}
+      {showRoomHistoryModal && selectedGuide && (
+        <DateHistoryModal
+          isOpen={true}
+          onClose={() => setShowRoomHistoryModal(false)}
+          mode="room"
+          roomId={selectedGuide.category}
+          roomLabel={language === 'hi' ? selectedGuide.titleHi : selectedGuide.titleEn}
+          currentUser={currentUser}
+          language={language}
+          onDeleted={() => {
+            AITrainingService.getRoomPhotos(selectedGuide.category).then((res) => {
+              setRoomPhotos(res.photos);
+              StorageService.setRoomPhotos(selectedGuide.category, res.photos);
+            });
+            onRefreshData();
+          }}
+        />
+      )}
 
     </div>
   );

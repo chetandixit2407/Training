@@ -43,6 +43,13 @@ export interface RoomPhotoItem {
   uploadedBy?: string;
   isPrimary?: boolean;
   photoType?: 'reference' | 'incorrect';
+  roomId?: string;
+  fileName?: string;
+  storagePath?: string;
+  assetId?: string;
+  isCurrent?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
 }
 
 export interface AIRoomAnalysis {
@@ -184,6 +191,23 @@ export interface CompletionPhotoItem {
   caption?: string;
   photoType?: 'before' | 'after';
   retentionDays?: number;
+  storagePath?: string;
+  assetId?: string;
+  isLatest?: boolean;
+  archivedAt?: string;
+}
+
+export interface DeletionAuditLog {
+  id: string;
+  targetType: 'room_reference' | 'task_proof';
+  targetId: string;
+  roomId?: string;
+  taskId?: string;
+  fileName: string;
+  storagePath: string;
+  deletedBy: string;
+  deletedByUid?: string;
+  deletedAt: string;
 }
 
 export interface TrainingInstructionStep {

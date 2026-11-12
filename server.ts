@@ -49,12 +49,24 @@ const ROOM_PHOTOS_FILE = path.join(DATA_DIR, 'room_photos.json');
 const ROOM_ANALYSIS_FILE = path.join(DATA_DIR, 'room_analysis.json');
 const COMPLETION_PHOTOS_FILE = path.join(DATA_DIR, 'completion_photos.json');
 const TASKS_FILE = path.join(DATA_DIR, 'tasks.json');
+const DELETION_AUDIT_FILE = path.join(DATA_DIR, 'deletion_audit_logs.json');
 
 // Ensure distinct data and categorized uploads directories exist
 [DATA_DIR, UPLOADS_DIR, REFERENCE_UPLOADS_DIR, COMPLETION_UPLOADS_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+});
+
+// Global CORS & preflight support for localhost, Cloudflare Tunnel, and cross-device access
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id, x-user-role, x-user-name');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
 });
 
 // Ensure API responses are never stale-cached across devices or sessions
@@ -65,11 +77,11 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Allow cross-origin image loading across preview/dev/shared domains
+// Allow cross-origin image loading across localhost, Cloudflare Tunnel, and shared domains
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
   next();
 });
 
@@ -78,9 +90,31 @@ app.use('/uploads/reference', express.static(REFERENCE_UPLOADS_DIR));
 app.use('/uploads/completion', express.static(COMPLETION_UPLOADS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Return explicit 404 for missing upload files instead of falling through to SPA index.html
+// On-demand restore from backupDataUrl if physical file is missing on disk, otherwise explicit 404
 app.use('/uploads', (req, res) => {
-  res.status(404).json({ error: 'Uploaded image file not found on server' });
+  try {
+    const cleanPath = req.path.split('?')[0];
+    const filename = path.basename(cleanPath);
+    if (filename && filename !== '.' && filename !== '/') {
+      if (req.originalUrl.startsWith('/uploads/reference/')) {
+        loadRoomPhotos();
+        const restoredPath = path.join(REFERENCE_UPLOADS_DIR, filename);
+        if (fs.existsSync(restoredPath)) {
+          return res.sendFile(restoredPath);
+        }
+      } else if (req.originalUrl.startsWith('/uploads/completion/')) {
+        loadCompletionPhotos();
+        const restoredPath = path.join(COMPLETION_UPLOADS_DIR, filename);
+        if (fs.existsSync(restoredPath)) {
+          return res.sendFile(restoredPath);
+        }
+      }
+    }
+  } catch (restoreErr) {
+    console.warn('[UPLOAD_RESTORE_ERROR]', req.originalUrl, restoreErr);
+  }
+  console.warn(`[UPLOAD_404] Image file not found on server: ${req.originalUrl}`);
+  res.status(404).json({ error: 'Uploaded image file not found on server', path: req.originalUrl });
 });
 
 
@@ -1192,13 +1226,90 @@ function stripBackupField(list: any[]): any[] {
   return (list || []).map(({ backupDataUrl, ...rest }) => rest);
 }
 
-// 1. GET ALL ROOM REFERENCE PHOTOS & AI ANALYSES (Accessible to Pantry Boys & Admins)
+function loadDeletionAuditLogs(): any[] {
+  try {
+    if (fs.existsSync(DELETION_AUDIT_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(DELETION_AUDIT_FILE, 'utf-8'));
+      return Array.isArray(parsed) ? parsed : [];
+    }
+  } catch (err) {
+    console.error('Error reading deletion_audit_logs.json:', err);
+  }
+  return [];
+}
+
+function recordDeletionAudit(entry: {
+  targetType: 'room_reference' | 'task_proof';
+  targetId: string;
+  roomId?: string;
+  taskId?: string;
+  fileName: string;
+  storagePath: string;
+  deletedBy: string;
+}) {
+  try {
+    const logs = loadDeletionAuditLogs();
+    logs.unshift({
+      id: `del_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      ...entry,
+      deletedAt: new Date().toISOString(),
+    });
+    fs.writeFileSync(DELETION_AUDIT_FILE, JSON.stringify(logs, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving deletion audit log:', err);
+  }
+}
+
+function matchesDateFilter(isoDate: string | undefined, filter?: string, startDate?: string, endDate?: string): boolean {
+  if (!filter || filter === 'all') return true;
+  if (!isoDate) return false;
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return false;
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTomorrow = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+  const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000);
+
+  if (filter === 'today') {
+    return d >= startOfToday && d < startOfTomorrow;
+  }
+  if (filter === 'yesterday') {
+    return d >= startOfYesterday && d < startOfToday;
+  }
+  if (filter === '7days') {
+    const sevenDaysAgo = new Date(startOfToday.getTime() - 6 * 24 * 60 * 60 * 1000);
+    return d >= sevenDaysAgo;
+  }
+  if (filter === '30days') {
+    const thirtyDaysAgo = new Date(startOfToday.getTime() - 29 * 24 * 60 * 60 * 1000);
+    return d >= thirtyDaysAgo;
+  }
+  if (filter === 'custom') {
+    if (startDate) {
+      const s = new Date(startDate);
+      s.setHours(0, 0, 0, 0);
+      if (d < s) return false;
+    }
+    if (endDate) {
+      const e = new Date(endDate);
+      e.setHours(23, 59, 59, 999);
+      if (d > e) return false;
+    }
+    return true;
+  }
+  return true;
+}
+
+// 1. GET ALL ROOM REFERENCE PHOTOS & AI ANALYSES (Shows only current/latest by default)
 app.get('/api/photos/all-rooms', (req, res) => {
+  const includeHistory = req.query.includeHistory === 'true';
   const photos = loadRoomPhotos();
   const analyses = loadRoomAnalysis();
   const cleanPhotos: Record<string, any[]> = {};
   Object.keys(photos).forEach((k) => {
-    cleanPhotos[k] = stripBackupField(photos[k]);
+    const list = stripBackupField(photos[k]);
+    cleanPhotos[k] = includeHistory ? list : list.filter((p) => p.isCurrent !== false);
   });
   res.json({
     success: true,
@@ -1207,12 +1318,14 @@ app.get('/api/photos/all-rooms', (req, res) => {
   });
 });
 
-// 2. GET SINGLE ROOM REFERENCE PHOTOS
+// 2. GET SINGLE ROOM REFERENCE PHOTOS (Shows only current/latest by default)
 app.get('/api/photos/room/:category', (req, res) => {
+  const includeHistory = req.query.includeHistory === 'true';
   const normCat = normalizeRoomCategory(req.params.category);
   const photos = loadRoomPhotos();
   const analyses = loadRoomAnalysis();
-  const roomList = stripBackupField(photos[normCat] || photos[req.params.category] || []);
+  const rawList = stripBackupField(photos[normCat] || photos[req.params.category] || []);
+  const roomList = includeHistory ? rawList : rawList.filter((p) => p.isCurrent !== false);
   const roomAnalysis = analyses[normCat] || analyses[req.params.category] || null;
   res.json({
     success: true,
@@ -1220,6 +1333,34 @@ app.get('/api/photos/room/:category', (req, res) => {
     photos: roomList,
     analysis: roomAnalysis,
   });
+});
+
+// 2B. DATE-WISE ROOM REFERENCE PHOTO HISTORY
+app.get('/api/photos/history', (req, res) => {
+  try {
+    const { roomId, filter, startDate, endDate } = req.query as Record<string, string>;
+    const photosByRoom = loadRoomPhotos();
+    let history: any[] = [];
+
+    Object.entries(photosByRoom).forEach(([cat, list]) => {
+      if (roomId && roomId !== 'all' && normalizeRoomCategory(roomId) !== cat) return;
+      stripBackupField(list).forEach((p) => {
+        if (matchesDateFilter(p.uploadedAt, filter, startDate, endDate)) {
+          history.push({
+            ...p,
+            roomId: p.roomId || cat,
+            isCurrent: p.isCurrent !== false,
+            storagePath: p.storagePath || p.url,
+          });
+        }
+      });
+    });
+
+    history.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+    res.json({ success: true, photos: history, totalCount: history.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch room photo history' });
+  }
 });
 
 // 3. UPLOAD MULTIPLE REFERENCE PHOTOS AT ONCE (Admin only)
@@ -1293,7 +1434,7 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
       const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
       if (g) {
         g.photoUrl = primaryItem.url;
-        g.photos = allRoomPhotos[normCat];
+        g.photos = stripBackupField(allRoomPhotos[normCat]);
         g.updatedAt = now;
         saveGuides(guides);
       }
@@ -1302,8 +1443,8 @@ app.post('/api/photos/upload-multiple', requireAdmin, (req, res) => {
     res.json({
       success: true,
       message: `${addedItems.length} photos uploaded and saved permanently for ${roomName || normCat}!`,
-      photos: allRoomPhotos[normCat],
-      added: addedItems,
+      photos: stripBackupField(allRoomPhotos[normCat]),
+      added: stripBackupField(addedItems),
     });
   } catch (err: any) {
     console.error('Error in /api/photos/upload-multiple:', err);
@@ -1477,51 +1618,62 @@ function executePhotoReplacement(category: string, photoId: string, req: express
       return res.status(500).json({ error: 'Replacement image was not found on server storage after write' });
     }
     const existing = list[idx];
+    const now = new Date().toISOString();
+    const adminName = (req.body?.adminName || req.headers['x-user-name'] || 'Admin') as string;
 
-    // Delete old physical file from disk if it was an uploaded file
-    if (existing && existing.url && existing.url !== permanentUrl) {
-      deletePhysicalUploadFile(existing.url);
-    }
-    if (targetUrl && targetUrl !== permanentUrl) {
-      deletePhysicalUploadFile(targetUrl);
-    }
-
+    // Preserve previous photo permanently in history (NEVER delete or overwrite)
     list[idx] = {
       ...existing,
+      isCurrent: false,
+      isPrimary: false,
+      archivedAt: now,
+      archivedBy: adminName,
+    };
+
+    const newReplacementItem = {
+      id: `photo_${normCat}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      roomId: normCat,
       url: permanentUrl,
       fileName: savedFileName,
+      storagePath: `rooms/${normCat}/${savedFileName}`,
       backupDataUrl: photoBase64,
       captionHi: captionHi ?? existing.captionHi,
       captionEn: captionEn ?? existing.captionEn,
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: (req.body?.adminName || req.headers['x-user-name'] || 'Admin') as string,
+      uploadedAt: now,
+      uploadedBy: adminName,
+      isPrimary: existing.isPrimary ?? true,
+      isCurrent: true,
+      photoType: existing.photoType || 'reference',
     };
+    list.push(newReplacementItem);
 
     allRoomPhotos[catKey] = list;
     saveRoomPhotos(allRoomPhotos);
 
+    const currentList = list.filter((p) => p.isCurrent !== false);
+
     // Sync Knowledge Base, Guides, Tasks
-    const primaryItem = list.find((p) => p.isPrimary) || list[0];
+    const primaryItem = currentList.find((p) => p.isPrimary) || currentList[0] || newReplacementItem;
     const newPrimaryUrl = primaryItem ? primaryItem.url : permanentUrl;
 
     const records = loadKnowledgeBase();
     const kb = records.find((r) => normalizeRoomCategory(r.category) === normCat);
     if (kb) {
-      if (list[idx].isPrimary || kb.referencePhotoUrl === existing?.url || !kb.referencePhotoUrl) {
+      if (newReplacementItem.isPrimary || kb.referencePhotoUrl === existing?.url || !kb.referencePhotoUrl) {
         kb.referencePhotoUrl = newPrimaryUrl;
       }
-      kb.updatedAt = new Date().toISOString();
+      kb.updatedAt = now;
       saveKnowledgeBase(records);
     }
 
     const guides = loadGuides();
     const g = guides.find((item: any) => normalizeRoomCategory(item.category) === normCat);
     if (g) {
-      if (list[idx].isPrimary || g.photoUrl === existing?.url || !g.photoUrl) {
+      if (newReplacementItem.isPrimary || g.photoUrl === existing?.url || !g.photoUrl) {
         g.photoUrl = newPrimaryUrl;
       }
-      g.photos = list;
-      g.updatedAt = new Date().toISOString();
+      g.photos = stripBackupField(currentList);
+      g.updatedAt = now;
       saveGuides(guides);
     }
 
@@ -1539,13 +1691,15 @@ function executePhotoReplacement(category: string, photoId: string, req: express
       saveTasks(tasks);
     }
 
-    console.log(`[PHOTO_REPLACE_SUCCESS] Successfully replaced reference photo in room ${normCat}. New URL: ${permanentUrl}`);
+    console.log(`[PHOTO_REPLACE_SUCCESS] Archived old photo & saved new reference photo in room ${normCat}. New URL: ${permanentUrl}`);
 
+    const cleanCurrentList = stripBackupField(currentList);
+    const cleanNew = stripBackupField([newReplacementItem])[0];
     res.json({
       success: true,
-      message: 'Photo replaced successfully',
-      photos: list,
-      replacedPhoto: list[idx],
+      message: 'Photo updated permanently; previous version preserved in date-wise history',
+      photos: cleanCurrentList,
+      replacedPhoto: cleanNew,
     });
   } catch (err: any) {
     console.error('Error replacing photo:', err);
@@ -1732,12 +1886,21 @@ function executePhotoDeletion(category: string, photoId: string, req: express.Re
       saveTasks(tasks);
     }
 
+    recordDeletionAudit({
+      targetType: 'room_reference',
+      targetId: photoId,
+      roomId: normCat,
+      fileName: removedPhoto?.fileName || path.basename(removedPhoto?.url || photoId),
+      storagePath: removedPhoto?.storagePath || removedPhoto?.url || `rooms/${normCat}/${photoId}`,
+      deletedBy: (req.headers['x-user-name'] as string) || 'Admin',
+    });
+
     console.log(`[PHOTO_DELETE_SUCCESS] Permanently deleted reference photo ${photoId} from room ${normCat}. Remaining photos: ${list.length}`);
 
     return res.json({
       success: true,
       message: 'Reference photo permanently deleted from disk storage and room gallery',
-      photos: list,
+      photos: stripBackupField(list.filter((p) => p.isCurrent !== false)),
       removedPhotoId: photoId,
       primaryPhotoUrl: newPrimaryUrl,
     });
@@ -2476,6 +2639,8 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
         pantryBoyName: effectiveUserName,
         angleLabel: item.angleLabel || `Angle #${idx + 1}`,
         caption: item.caption || '',
+        storagePath: `task_proofs/${taskId}/${finalFileName || 'proof.jpg'}`,
+        isLatest: true,
         retentionDays: RETENTION_DAYS,
       };
       if (item.photoBase64 && item.photoBase64.startsWith('data:image/')) {
@@ -2485,9 +2650,15 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
       savedProofItems.push(proofItem);
     });
 
-    // 3. Save into Completion Photos Audit & Retention Database (completion_photos.json)
+    // 3. Save into Completion Photos Permanent History Database (never overwrite previous proofs)
     const allCompletionPhotos = loadCompletionPhotos();
     if (savedProofItems.length > 0) {
+      allCompletionPhotos.forEach((p: any) => {
+        if (p.taskId === taskId && p.isLatest !== false) {
+          p.isLatest = false;
+          p.archivedAt = now;
+        }
+      });
       allCompletionPhotos.push(...savedProofItems);
       saveCompletionPhotos(allCompletionPhotos);
     }
@@ -2542,12 +2713,9 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
     }
     saveTasks(tasksList);
 
-    // 5. Trigger proactive cleanup of any expired photos older than 40 days
-    cleanupExpiredCompletionPhotos();
-
     res.json({
       success: true,
-      message: `Task completed! ${publicProofItems.length} completion photo(s) stored securely for 40 days.`,
+      message: `Task completed! ${publicProofItems.length} completion photo(s) stored permanently.`,
       task: updatedTaskRecord,
       proofPhotos: publicProofItems,
       uploadedAt: now,
@@ -2560,22 +2728,24 @@ app.post('/api/tasks/:taskId/complete', (req, res) => {
   }
 });
 
-// Query all active completion photos (Runs 40-day retention cleanup first)
+// Query all completion photos (with optional date-wise filter, never auto-purged)
 app.get('/api/completion-photos', (req, res) => {
   try {
-    cleanupExpiredCompletionPhotos();
     const photos = loadCompletionPhotos();
-    const { taskId, pantryBoyId, roomName } = req.query;
+    const { taskId, pantryBoyId, roomName, filter, startDate, endDate } = req.query as Record<string, string>;
 
     let filtered = photos;
-    if (taskId) {
+    if (taskId && taskId !== 'all') {
       filtered = filtered.filter((p) => p.taskId === taskId);
     }
-    if (pantryBoyId) {
+    if (pantryBoyId && pantryBoyId !== 'all') {
       filtered = filtered.filter((p) => p.pantryBoyId === pantryBoyId);
     }
-    if (roomName) {
+    if (roomName && roomName !== 'all') {
       filtered = filtered.filter((p) => p.roomName?.toLowerCase() === String(roomName).toLowerCase());
+    }
+    if (filter && filter !== 'all') {
+      filtered = filtered.filter((p) => matchesDateFilter(p.uploadedAt, filter, startDate, endDate));
     }
 
     // Sort newest first & strip backupDataUrl
@@ -2591,6 +2761,16 @@ app.get('/api/completion-photos', (req, res) => {
   } catch (err: any) {
     console.error('Error retrieving completion photos:', err);
     res.status(500).json({ error: err.message || 'Failed to fetch completion photos' });
+  }
+});
+
+// Admin Deletion Audit Log Endpoint
+app.get('/api/audit/deletions', requireAdmin, (req, res) => {
+  try {
+    const logs = loadDeletionAuditLogs();
+    res.json({ success: true, logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch deletion audit logs' });
   }
 });
 
@@ -2704,13 +2884,11 @@ app.put('/api/tasks/:id', (req, res) => {
   }
 });
 
-// DELETE TASK COMPLETION PHOTO (Admin or owner Pantry Boy)
-app.delete('/api/completion-photos/:photoId', (req, res) => {
+// DELETE TASK COMPLETION PHOTO (Admin only)
+app.delete('/api/completion-photos/:photoId', requireAdmin, (req, res) => {
   try {
     const { photoId } = req.params;
     const { taskId } = req.body || req.query;
-    const userRole = (req.headers['x-user-role'] || req.query.userRole || req.body?.userRole) as string;
-    const userId = (req.headers['x-user-id'] || req.query.userId || req.body?.userId) as string;
     const decodedId = decodeURIComponent(photoId);
 
     const allCompletionPhotos = loadCompletionPhotos();
@@ -2729,19 +2907,23 @@ app.delete('/api/completion-photos/:photoId', (req, res) => {
     if (photoIdx !== -1) {
       removedItem = allCompletionPhotos[photoIdx];
 
-      // Permission check: Admin or the owner pantry boy
-      if (userRole !== 'admin' && userId && removedItem.pantryBoyId && removedItem.pantryBoyId !== userId) {
-        return res.status(403).json({ error: 'Permission denied: You can only delete photos uploaded by your account.' });
-      }
-
       // Physically delete file from disk across all upload directories
       if (removedItem.url) deletePhysicalUploadFile(removedItem.url);
       if (removedItem.fileName) deletePhysicalUploadFile(removedItem.fileName);
 
       allCompletionPhotos.splice(photoIdx, 1);
       saveCompletionPhotos(allCompletionPhotos);
+
+      recordDeletionAudit({
+        targetType: 'task_proof',
+        targetId: removedItem.id || photoId,
+        taskId: removedItem.taskId || (taskId as string) || '',
+        roomId: removedItem.roomName || '',
+        fileName: removedItem.fileName || path.basename(removedItem.url || photoId),
+        storagePath: removedItem.storagePath || removedItem.url || photoId,
+        deletedBy: (req.headers['x-user-name'] as string) || 'Admin',
+      });
     } else {
-      // Even if not in completion_photos.json, still attempt physical deletion if matching a file
       deletePhysicalUploadFile(photoId);
       deletePhysicalUploadFile(decodedId);
     }
@@ -2813,12 +2995,10 @@ app.delete('/api/completion-photos/:photoId', (req, res) => {
   }
 });
 
-// DIRECT ENDPOINT: Clear/Delete proof photo from a task
-app.delete('/api/tasks/:taskId/proof-photo', (req, res) => {
+// DIRECT ENDPOINT: Clear/Delete proof photo from a task (Admin only)
+app.delete('/api/tasks/:taskId/proof-photo', requireAdmin, (req, res) => {
   try {
     const { taskId } = req.params;
-    const userRole = (req.headers['x-user-role'] || req.query.userRole || req.body?.userRole) as string;
-    const userId = (req.headers['x-user-id'] || req.query.userId || req.body?.userId) as string;
 
     const tasksList = loadTasks();
     const taskIdx = tasksList.findIndex((t: any) => t.id === taskId);
@@ -2827,11 +3007,17 @@ app.delete('/api/tasks/:taskId/proof-photo', (req, res) => {
     const allCompletionPhotos = loadCompletionPhotos();
     const taskCompletionPhotos = allCompletionPhotos.filter((p: any) => p.taskId === taskId);
 
-    // Permission check
-    const ownerId = existingTask?.completedByUserId || taskCompletionPhotos[0]?.pantryBoyId;
-    if (userRole !== 'admin' && userId && ownerId && ownerId !== userId) {
-      return res.status(403).json({ error: 'Permission denied to delete photos from this task.' });
-    }
+    taskCompletionPhotos.forEach((p: any) => {
+      recordDeletionAudit({
+        targetType: 'task_proof',
+        targetId: p.id,
+        taskId,
+        roomId: p.roomName || '',
+        fileName: p.fileName || path.basename(p.url || p.id),
+        storagePath: p.storagePath || p.url || p.id,
+        deletedBy: (req.headers['x-user-name'] as string) || 'Admin',
+      });
+    });
 
     // Unlink all proof photo files from task and completion_photos.json
     if (existingTask) {
@@ -3059,24 +3245,7 @@ async function startServer() {
     }
   });
 
-  // Run 40-day photo retention cleanup on server start
-  try {
-    const cleanupResult = cleanupExpiredCompletionPhotos();
-    if (cleanupResult.deletedCount > 0) {
-      console.log(`[Photo Retention] On startup, cleaned up ${cleanupResult.deletedCount} expired photos.`);
-    }
-  } catch (err) {
-    console.error('Error running initial photo retention cleanup:', err);
-  }
-
-  // Schedule automatic 40-day photo retention check every 1 hour
-  setInterval(() => {
-    try {
-      cleanupExpiredCompletionPhotos();
-    } catch (err) {
-      console.error('Error during scheduled photo retention cleanup:', err);
-    }
-  }, 60 * 60 * 1000);
+  // Historical completion photos are preserved permanently unless deleted by Admin.
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer } = await import('vite');

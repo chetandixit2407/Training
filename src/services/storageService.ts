@@ -136,6 +136,11 @@ export function normalizeRoomCategory(cat: string): string {
     .replace(/-/g, '_');
 }
 
+export function normalizeImageUrl(url?: string): string {
+  if (!url) return '';
+  return url.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, '');
+}
+
 // In-memory room photo & analysis caches
 let roomPhotosCache: Record<string, RoomPhotoItem[]> = {};
 let roomAnalysesCache: Record<string, AIRoomAnalysis> = {};
@@ -483,9 +488,9 @@ export const StorageService = {
 
       return {
         ...guide,
-        photoUrl: resolvedPhotoUrl,
-        incorrectPhotoUrl: customIncPhoto !== undefined ? customIncPhoto : guide.incorrectPhotoUrl,
-        photos: roomGallery,
+        photoUrl: normalizeImageUrl(resolvedPhotoUrl),
+        incorrectPhotoUrl: customIncPhoto !== undefined ? normalizeImageUrl(customIncPhoto) : (guide.incorrectPhotoUrl ? normalizeImageUrl(guide.incorrectPhotoUrl) : undefined),
+        photos: roomGallery.map((p) => ({ ...p, url: normalizeImageUrl(p.url) })),
         aiRoomAnalysis: roomAnalysis,
       };
     });
@@ -821,10 +826,16 @@ export const StorageService = {
 
       const proofExplicitlyCleared = Array.isArray(task.proofPhotos) && task.proofPhotos.length === 0 && !task.proofPhotoUrl;
 
+      const rawRef = customRef !== undefined ? customRef : finalRef;
+      const rawProof = proofExplicitlyCleared ? undefined : (customProof !== undefined ? customProof : finalProof);
+
       return {
         ...task,
-        referencePhotoUrl: customRef !== undefined ? customRef : finalRef,
-        proofPhotoUrl: proofExplicitlyCleared ? undefined : (customProof !== undefined ? customProof : finalProof),
+        referencePhotoUrl: normalizeImageUrl(rawRef),
+        proofPhotoUrl: rawProof ? normalizeImageUrl(rawProof) : undefined,
+        proofPhotos: Array.isArray(task.proofPhotos)
+          ? task.proofPhotos.map((p) => ({ ...p, url: normalizeImageUrl(p.url) }))
+          : task.proofPhotos,
       };
     });
   },

@@ -3,6 +3,7 @@ import { DailyTask, User, Language } from '../types';
 import { VoiceButton } from './VoiceButton';
 import { TaskCompleteModal } from './TaskCompleteModal';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { DateHistoryModal } from './DateHistoryModal';
 import { ReferenceImage } from './ReferenceImage';
 import { AITrainingService } from '../services/aiTrainingService';
 import { StorageService } from '../services/storageService';
@@ -19,6 +20,7 @@ import {
   Calendar,
   ShieldCheck,
   Trash2,
+  History,
 } from 'lucide-react';
 
 interface TasksSectionProps {
@@ -43,6 +45,7 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<DailyTask | null>(null);
   const [isDeletingProof, setIsDeletingProof] = useState(false);
   const [deleteProofError, setDeleteProofError] = useState<string | null>(null);
+  const [showTaskHistoryModal, setShowTaskHistoryModal] = useState(false);
 
   const filteredTasks = tasks.filter((t) => {
     if (filter === 'pending' && t.status === 'completed') return false;
@@ -168,12 +171,20 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
         </div>
 
         {/* Action / Stats */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 bg-slate-100 rounded-xl">
             <span className="text-amber-700">⏳ {pendingCount} {language === 'hi' ? 'बाकी' : 'Pending'}</span>
             <span>•</span>
             <span className="text-emerald-700">✅ {completedCount} {language === 'hi' ? 'पूर्ण' : 'Done'}</span>
           </div>
+
+          <button
+            onClick={() => setShowTaskHistoryModal(true)}
+            className="px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-bold text-xs rounded-xl transition-all cursor-pointer min-h-[44px] flex items-center gap-1.5"
+          >
+            <History className="w-4 h-4 text-amber-700" />
+            <span>{language === 'hi' ? 'प्रमाण इतिहास' : 'Proof History'}</span>
+          </button>
 
           {currentUser?.role === 'admin' && onOpenCreateTask && (
             <button
@@ -324,7 +335,7 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
                         <Check className="w-2.5 h-2.5" />
                         <span>{language === 'hi' ? 'अपलोड फोटो' : 'Uploaded Proof'}</span>
                       </div>
-                      {(currentUser?.role === 'admin' || (currentUser && currentUser.id === task.completedByUserId)) && (
+                      {currentUser?.role === 'admin' && (
                         <button
                           type="button"
                           onClick={(e) => handleDeleteProofPhoto(task, e)}
@@ -404,7 +415,7 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
                       <Camera className="w-4 h-4 text-slate-500" />
                       <span>{language === 'hi' ? 'फोटो बदलें' : 'Re-upload'}</span>
                     </button>
-                    {(currentUser?.role === 'admin' || (currentUser && currentUser.id === task.completedByUserId)) && (
+                    {currentUser?.role === 'admin' && (
                       <button
                         type="button"
                         onClick={(e) => handleDeleteProofPhoto(task, e)}
@@ -479,6 +490,17 @@ export const TasksSection: React.FC<TasksSectionProps> = ({
         totalPhotos={deleteConfirmTask?.proofPhotos?.length}
         error={deleteProofError}
       />
+
+      {/* Date-Wise Task Proof History Modal */}
+      {showTaskHistoryModal && (
+        <DateHistoryModal
+          isOpen={true}
+          onClose={() => setShowTaskHistoryModal(false)}
+          mode="task"
+          currentUser={currentUser}
+          language={language}
+        />
+      )}
 
     </div>
   );

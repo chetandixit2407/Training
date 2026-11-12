@@ -1,0 +1,169 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'chatgpt2407.open@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'updatedAt'])
+        && data.uid is string && data.uid == userId && data.uid.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role in ['admin', 'pantry_boy']
+        && data.updatedAt is string && data.updatedAt.size() >= 10 && data.updatedAt.size() <= 40;
+    }
+
+    function isValidRoomPhoto(data) {
+      return data.keys().hasAll(['id', 'roomId', 'fileName', 'storagePath', 'assetId', 'url', 'photoType', 'isPrimary', 'isCurrent', 'uploadedAt', 'uploadedBy', 'uploadedByUid'])
+        && data.keys().hasOnly(['id', 'roomId', 'fileName', 'storagePath', 'assetId', 'url', 'captionHi', 'captionEn', 'photoType', 'isPrimary', 'isCurrent', 'uploadedAt', 'uploadedBy', 'uploadedByUid'])
+        && isValidId(data.id)
+        && data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 80
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 200
+        && data.storagePath is string && data.storagePath.size() >= 1 && data.storagePath.size() <= 300
+        && data.assetId is string && data.assetId.size() >= 1 && data.assetId.size() <= 128
+        && data.url is string && data.url.size() >= 1 && data.url.size() <= 500
+        && (!('captionHi' in data) || (data.captionHi is string && data.captionHi.size() <= 300))
+        && (!('captionEn' in data) || (data.captionEn is string && data.captionEn.size() <= 300))
+        && data.photoType in ['reference', 'incorrect']
+        && data.isPrimary is bool
+        && data.isCurrent is bool
+        && data.uploadedAt is string && data.uploadedAt.size() >= 10 && data.uploadedAt.size() <= 40
+        && data.uploadedBy is string && data.uploadedBy.size() >= 1 && data.uploadedBy.size() <= 120
+        && data.uploadedByUid is string && data.uploadedByUid == request.auth.uid;
+    }
+
+    function isValidTaskProof(data) {
+      return data.keys().hasAll(['id', 'taskId', 'taskTitle', 'roomId', 'roomName', 'employeeId', 'employeeName', 'fileName', 'storagePath', 'assetId', 'url', 'isLatest', 'uploadedAt', 'uploadedByUid'])
+        && data.keys().hasOnly(['id', 'taskId', 'taskTitle', 'roomId', 'roomName', 'employeeId', 'employeeName', 'fileName', 'storagePath', 'assetId', 'url', 'angleLabel', 'caption', 'isLatest', 'uploadedAt', 'uploadedByUid'])
+        && isValidId(data.id)
+        && data.taskId is string && data.taskId.size() >= 1 && data.taskId.size() <= 128
+        && data.taskTitle is string && data.taskTitle.size() >= 1 && data.taskTitle.size() <= 200
+        && data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 80
+        && data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 120
+        && data.employeeId is string && data.employeeId.size() >= 1 && data.employeeId.size() <= 128
+        && data.employeeName is string && data.employeeName.size() >= 1 && data.employeeName.size() <= 120
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 200
+        && data.storagePath is string && data.storagePath.size() >= 1 && data.storagePath.size() <= 300
+        && data.assetId is string && data.assetId.size() >= 1 && data.assetId.size() <= 128
+        && data.url is string && data.url.size() >= 1 && data.url.size() <= 500
+        && (!('angleLabel' in data) || (data.angleLabel is string && data.angleLabel.size() <= 120))
+        && (!('caption' in data) || (data.caption is string && data.caption.size() <= 300))
+        && data.isLatest is bool
+        && data.uploadedAt is string && data.uploadedAt.size() >= 10 && data.uploadedAt.size() <= 40
+        && data.uploadedByUid is string && data.uploadedByUid == request.auth.uid;
+    }
+
+    function isValidPhotoAsset(data) {
+      return data.keys().hasAll(['id', 'contentType', 'dataUrl', 'storagePath', 'createdAt', 'uploadedByUid'])
+        && data.keys().hasOnly(['id', 'contentType', 'dataUrl', 'storagePath', 'createdAt', 'uploadedByUid'])
+        && isValidId(data.id)
+        && data.contentType is string && data.contentType.size() >= 5 && data.contentType.size() <= 50
+        && data.dataUrl is string && data.dataUrl.size() >= 20 && data.dataUrl.size() <= 950000
+        && data.storagePath is string && data.storagePath.size() >= 1 && data.storagePath.size() <= 300
+        && data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40
+        && data.uploadedByUid is string && data.uploadedByUid == request.auth.uid;
+    }
+
+    function isValidDeletionAuditLog(data) {
+      return data.keys().hasAll(['id', 'targetType', 'targetId', 'fileName', 'storagePath', 'deletedBy', 'deletedByUid', 'deletedAt'])
+        && data.keys().hasOnly(['id', 'targetType', 'targetId', 'roomId', 'taskId', 'fileName', 'storagePath', 'deletedBy', 'deletedByUid', 'deletedAt'])
+        && isValidId(data.id)
+        && data.targetType in ['room_reference', 'task_proof']
+        && data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128
+        && (!('roomId' in data) || (data.roomId is string && data.roomId.size() <= 80))
+        && (!('taskId' in data) || (data.taskId is string && data.taskId.size() <= 128))
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 200
+        && data.storagePath is string && data.storagePath.size() >= 1 && data.storagePath.size() <= 300
+        && data.deletedBy is string && data.deletedBy.size() >= 1 && data.deletedBy.size() <= 120
+        && data.deletedByUid is string && data.deletedByUid == request.auth.uid
+        && data.deletedAt is string && data.deletedAt.size() >= 10 && data.deletedAt.size() <= 40;
+    }
+
+    match /test/connection {
+      allow read: if isSignedIn();
+    }
+
+    match /admins/{adminUid} {
+      allow read: if isSignedIn() && request.auth.uid == adminUid;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isVerifiedUser() && request.auth.uid == userId && isValidUserProfile(incoming(), userId) && (incoming().role == 'pantry_boy' || isAdmin());
+      allow update: if isVerifiedUser() && isValidUserProfile(incoming(), userId) && ((request.auth.uid == userId && incoming().role == existing().role) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /room_photos/{photoId} {
+      allow get: if isSignedIn() && isValidId(photoId);
+      allow list: if isSignedIn() && resource.data.roomId is string;
+      allow create: if isAdmin() && isValidId(photoId) && isValidRoomPhoto(incoming());
+      allow update: if isAdmin()
+        && isValidId(photoId)
+        && isValidRoomPhoto(incoming())
+        && incoming().id == existing().id
+        && incoming().roomId == existing().roomId
+        && incoming().uploadedAt == existing().uploadedAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isPrimary', 'isCurrent', 'captionHi', 'captionEn']);
+      allow delete: if isAdmin() && isValidId(photoId);
+    }
+
+    match /task_proofs/{proofId} {
+      allow get: if isSignedIn() && isValidId(proofId);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.uploadedByUid == request.auth.uid || resource.data.taskId is string);
+      allow create: if isVerifiedUser() && isValidId(proofId) && isValidTaskProof(incoming());
+      allow update: if isVerifiedUser()
+        && isValidId(proofId)
+        && isValidTaskProof(incoming())
+        && incoming().id == existing().id
+        && incoming().taskId == existing().taskId
+        && incoming().uploadedAt == existing().uploadedAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isLatest'])
+        && (isAdmin() || existing().uploadedByUid == request.auth.uid);
+      allow delete: if isAdmin() && isValidId(proofId);
+    }
+
+    match /photo_assets/{assetId} {
+      allow get: if isSignedIn() && isValidId(assetId);
+      allow create: if isVerifiedUser() && isValidId(assetId) && isValidPhotoAsset(incoming());
+      allow delete: if isAdmin() && isValidId(assetId);
+    }
+
+    match /deletion_audit_logs/{logId} {
+      allow get: if isAdmin() && isValidId(logId);
+      allow list: if isAdmin() && resource.data.targetType is string;
+      allow create: if isAdmin() && isValidId(logId) && isValidDeletionAuditLog(incoming());
+    }
+  }
+}

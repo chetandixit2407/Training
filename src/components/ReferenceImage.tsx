@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { Language } from '../types';
+import { CloudPhotoService } from '../services/cloudPhotoService';
 
 interface ReferenceImageProps {
   src: string;
@@ -22,12 +23,51 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [resolvedCloudSrc, setResolvedCloudSrc] = useState<string>('');
   const imgRef = useRef<HTMLImageElement>(null);
 
+  const isCloudAsset = Boolean(src && src.startsWith('cloud-asset://'));
+
+  useEffect(() => {
+    let active = true;
+    if (isCloudAsset) {
+      const assetId = src.replace('cloud-asset://', '');
+      setIsLoading(true);
+      CloudPhotoService.getPhotoAssetDataUrl(assetId)
+        .then((dataUrl) => {
+          if (!active) return;
+          if (dataUrl) {
+            setResolvedCloudSrc(dataUrl);
+            setHasError(false);
+          } else {
+            setHasError(true);
+            setIsLoading(false);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setHasError(true);
+            setIsLoading(false);
+          }
+        });
+    } else {
+      setResolvedCloudSrc('');
+    }
+    return () => {
+      active = false;
+    };
+  }, [src, isCloudAsset, retryCount]);
+
+  const rawSrc = isCloudAsset ? resolvedCloudSrc : src;
+
+  const normalizedSrc = rawSrc
+    ? rawSrc.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i, '')
+    : '';
+
   const effectiveSrc =
-    retryCount > 0 && src && !src.startsWith('data:')
-      ? `${src}${src.includes('?') ? '&' : '?'}retry=${retryCount}`
-      : src;
+    retryCount > 0 && normalizedSrc && !normalizedSrc.startsWith('data:')
+      ? `${normalizedSrc}${normalizedSrc.includes('?') ? '&' : '?'}retry=${retryCount}`
+      : normalizedSrc;
 
   useEffect(() => {
     setRetryCount(0);
@@ -35,8 +75,10 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
 
   useEffect(() => {
     if (!effectiveSrc) {
-      setIsLoading(false);
-      setHasError(false);
+      if (!isCloudAsset) {
+        setIsLoading(false);
+        setHasError(false);
+      }
       return;
     }
 
@@ -72,6 +114,7 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
 
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation();
+    console.info(`[ReferenceImage] Retrying image load: ${normalizedSrc}`);
     setHasError(false);
     setIsLoading(true);
     setRetryCount((c) => c + 1);
@@ -138,6 +181,18 @@ export const ReferenceImage: React.FC<ReferenceImageProps> = ({
           onError={() => {
             setIsLoading(false);
             setHasError(true);
+            console.error(`[ReferenceImage] Failed to load image: ${effectiveSrc} (attempt ${retryCount + 1})`);
+            if (effectiveSrc && effectiveSrc.startsWith('/uploads/')) {
+              fetch(effectiveSrc, { method: 'HEAD' })
+                .then((res) => {
+                  if (!res.ok) {
+                    console.error(`[ReferenceImage] Server responded HTTP ${res.status} (${res.statusText}) for ${effectiveSrc}`);
+                  }
+                })
+                .catch((err) => {
+                  console.error(`[ReferenceImage] Network error fetching ${effectiveSrc}:`, err);
+                });
+            }
           }}
         />
       )}

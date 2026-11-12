@@ -4,6 +4,7 @@ import { AITrainingService } from '../services/aiTrainingService';
 import { StorageService } from '../services/storageService';
 import { ReferenceImage } from './ReferenceImage';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { DateHistoryModal } from './DateHistoryModal';
 import {
   CheckCircle2,
   Clock,
@@ -25,6 +26,7 @@ import {
   ChevronRight,
   RefreshCw,
   Sparkles,
+  History,
 } from 'lucide-react';
 
 interface HistorySectionProps {
@@ -57,6 +59,7 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
   language,
   onUpdateTask,
 }) => {
+  const [showDateHistoryModal, setShowDateHistoryModal] = useState(false);
   const [zoomPhoto, setZoomPhoto] = useState<{
     url: string;
     caption?: string;
@@ -255,6 +258,14 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowDateHistoryModal(true)}
+            className="text-xs font-bold px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+          >
+            <History className="w-4 h-4 text-amber-700" />
+            <span>{language === 'hi' ? 'दिनांक-वार इतिहास' : 'Date History'}</span>
+          </button>
+
           <div className="text-xs font-bold px-3.5 py-2 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl flex items-center gap-1.5 shadow-xs">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span>
@@ -416,7 +427,7 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
             const primaryProof = photosList[0];
             const primaryUploadDate = primaryProof?.uploadedAt || task.completedAt;
             const daysLeft = getDaysRemaining(primaryUploadDate, primaryProof?.expiresAt);
-            const canDelete = currentUser?.role === 'admin' || (currentUser && currentUser.id === task.completedByUserId);
+            const canDelete = currentUser?.role === 'admin';
 
             return (
               <div
@@ -829,6 +840,18 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
         roomName={deleteConfirmTarget?.roomName}
         error={deletePhotoError}
       />
+
+      {/* Date-Wise Task Proof History Modal */}
+      {showDateHistoryModal && (
+        <DateHistoryModal
+          isOpen={true}
+          onClose={() => setShowDateHistoryModal(false)}
+          mode="task"
+          currentUser={currentUser}
+          language={language}
+          onDeleted={fetchRetentionAudit}
+        />
+      )}
 
     </div>
   );

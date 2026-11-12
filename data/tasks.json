@@ -43,6 +43,27 @@
     "completedByUserName": "Ramesh Kumar",
     "proofPhotos": [],
     "boyNotes": "Table wiped",
-    "notes": "Table wiped"
+    "notes": "Table wiped",
+    "afterPhotoUrl": null,
+    "proofPhotoUrl": null
+  },
+  {
+    "id": "e2e_test_task",
+    "title": "E2E Task",
+    "titleEn": "E2E Task",
+    "titleHi": "E2E Task",
+    "roomName": "E2E Room",
+    "roomNameEn": "E2E Room",
+    "roomNameHi": "E2E Room",
+    "status": "completed",
+    "completedAt": "2026-11-12T05:56:20.495Z",
+    "completedByUserId": "pb-101",
+    "completedByName": "Ramesh",
+    "completedByUserName": "Ramesh",
+    "proofPhotoUrl": null,
+    "afterPhotoUrl": null,
+    "proofPhotos": [],
+    "boyNotes": "",
+    "notes": ""
   }
 ]

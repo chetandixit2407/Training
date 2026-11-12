@@ -6,7 +6,9 @@ import {
   AIRoomAnalysis,
   CompletionPhotoItem,
   DailyTask,
+  DeletionAuditLog,
 } from '../types';
+import { CloudPhotoService } from './cloudPhotoService';
 
 /**
  * Service to interact with the backend Training and Knowledge endpoints.
@@ -228,7 +230,32 @@ export const AITrainingService = {
       throw new Error(errorJson.error || `Failed to upload photos: ${res.statusText}`);
     }
 
-    return await res.json();
+    const data = await res.json();
+
+    // Sync to Firebase Firestore + Storage if signed in
+    if (CloudPhotoService.getCurrentFirebaseUser() && Array.isArray(data.photos)) {
+      const addedCount = params.photos.length;
+      const addedItems: RoomPhotoItem[] = data.photos.slice(-addedCount);
+      await Promise.all(
+        addedItems.map((item, idx) =>
+          CloudPhotoService.uploadRoomPhoto({
+            photoId: item.id,
+            roomId: params.category,
+            fileName: item.fileName || `${item.id}.jpg`,
+            dataUrl: params.photos[idx]?.photoBase64 || item.url,
+            url: item.url,
+            captionHi: item.captionHi,
+            captionEn: item.captionEn,
+            isPrimary: item.isPrimary,
+            uploadedBy: params.user?.name || 'Admin',
+            uploadedAt: item.uploadedAt || new Date().toISOString(),
+            photoType: item.photoType || 'reference',
+          }).catch((err) => console.warn('Cloud sync warning (room upload):', err))
+        )
+      );
+    }
+
+    return data;
   },
 
   /**
@@ -378,7 +405,32 @@ export const AITrainingService = {
       throw new Error(err.error || 'Failed to replace photo');
     }
 
-    return await res.json();
+    const data = await res.json();
+
+    // Archive old photo in Firestore & upload new photo to Firebase if signed in
+    if (CloudPhotoService.getCurrentFirebaseUser()) {
+      await CloudPhotoService.archiveRoomPhoto(params.photoId).catch((err) =>
+        console.warn('Cloud sync warning (archive old photo):', err)
+      );
+      if (data.replacedPhoto) {
+        const rp: RoomPhotoItem = data.replacedPhoto;
+        await CloudPhotoService.uploadRoomPhoto({
+          photoId: rp.id,
+          roomId: params.category,
+          fileName: rp.fileName || `${rp.id}.jpg`,
+          dataUrl: params.photoBase64,
+          url: rp.url,
+          captionHi: rp.captionHi,
+          captionEn: rp.captionEn,
+          isPrimary: rp.isPrimary,
+          uploadedBy: activeUser?.name || 'Admin',
+          uploadedAt: rp.uploadedAt || new Date().toISOString(),
+          photoType: rp.photoType || 'reference',
+        }).catch((err) => console.warn('Cloud sync warning (replace room photo):', err));
+      }
+    }
+
+    return data;
   },
 
   /**
@@ -664,7 +716,33 @@ export const AITrainingService = {
       throw new Error(err.error || 'Failed to complete task with proof photos');
     }
 
-    return await res.json();
+    const data = await res.json();
+
+    // Sync task proof photos to Firebase Firestore + Storage if signed in
+    if (CloudPhotoService.getCurrentFirebaseUser() && Array.isArray(data.proofPhotos)) {
+      await Promise.all(
+        data.proofPhotos.map((proof: CompletionPhotoItem, idx: number) =>
+          CloudPhotoService.uploadTaskProof({
+            proofId: proof.id,
+            taskId: params.taskId,
+            taskTitle: params.taskTitle,
+            roomId: params.roomName,
+            roomName: params.roomName,
+            employeeId: params.user?.id || 'pantry_user',
+            employeeName: params.user?.name || 'Pantry Boy',
+            fileName: proof.fileName || `${proof.id}.jpg`,
+            dataUrl: params.completionPhotos[idx]?.photoBase64 || proof.url,
+            url: proof.url,
+            angleLabel: proof.angleLabel,
+            caption: proof.caption,
+            uploadedAt: proof.uploadedAt || new Date().toISOString(),
+            markPreviousNonLatest: idx === 0,
+          }).catch((err) => console.warn('Cloud sync warning (task proof):', err))
+        )
+      );
+    }
+
+    return data;
   },
 
   /**
@@ -847,6 +925,100 @@ export const AITrainingService = {
     }
 
     return await res.json();
+  },
+
+  /**
+   * DATE-WISE ROOM REFERENCE PHOTO HISTORY
+   */
+  async getRoomPhotoHistory(params: {
+    roomId?: string;
+    filter?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ success: boolean; photos: RoomPhotoItem[]; totalCount: number }> {
+    const qs = new URLSearchParams();
+    if (params.roomId) qs.set('roomId', params.roomId);
+    if (params.filter) qs.set('filter', params.filter);
+    if (params.startDate) qs.set('startDate', params.startDate);
+    if (params.endDate) qs.set('endDate', params.endDate);
+
+    const res = await fetch(`/api/photos/history?${qs.toString()}`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error('Failed to fetch room photo history');
+    }
+    const data = await res.json();
+    const cloudPhotos = await CloudPhotoService.listRoomPhotos(
+      params.roomId && params.roomId !== 'all' ? params.roomId : undefined
+    );
+    if (cloudPhotos.length > 0) {
+      const existingIds = new Set((data.photos || []).map((p: RoomPhotoItem) => p.id));
+      const merged = [...(data.photos || [])];
+      cloudPhotos.forEach((cp) => {
+        if (!existingIds.has(cp.id)) merged.push(cp);
+      });
+      merged.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+      return { success: true, photos: merged, totalCount: merged.length };
+    }
+    return data;
+  },
+
+  /**
+   * DATE-WISE TASK PROOF PHOTO HISTORY
+   */
+  async getTaskProofHistory(params: {
+    taskId?: string;
+    roomName?: string;
+    filter?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ success: boolean; photos: CompletionPhotoItem[]; totalCount: number }> {
+    const qs = new URLSearchParams();
+    if (params.taskId) qs.set('taskId', params.taskId);
+    if (params.roomName) qs.set('roomName', params.roomName);
+    if (params.filter) qs.set('filter', params.filter);
+    if (params.startDate) qs.set('startDate', params.startDate);
+    if (params.endDate) qs.set('endDate', params.endDate);
+
+    const res = await fetch(`/api/completion-photos?${qs.toString()}`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error('Failed to fetch task proof history');
+    }
+    const data = await res.json();
+    const cloudProofs = await CloudPhotoService.listTaskProofs(
+      params.taskId && params.taskId !== 'all' ? params.taskId : undefined
+    );
+    if (cloudProofs.length > 0) {
+      const existingIds = new Set((data.photos || []).map((p: CompletionPhotoItem) => p.id));
+      const merged = [...(data.photos || [])];
+      cloudProofs.forEach((cp) => {
+        if (!existingIds.has(cp.id)) merged.push(cp);
+      });
+      merged.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+      return { success: true, photos: merged, totalCount: merged.length };
+    }
+    return data;
+  },
+
+  /**
+   * ADMIN DELETION AUDIT LOGS
+   */
+  async getDeletionAuditLogs(user?: User | null): Promise<DeletionAuditLog[]> {
+    const res = await fetch('/api/audit/deletions', {
+      headers: getAuthHeaders(user),
+      cache: 'no-store',
+    });
+    const serverLogs: DeletionAuditLog[] = res.ok ? (await res.json()).logs || [] : [];
+    const cloudLogs = await CloudPhotoService.listDeletionAuditLogs();
+    if (cloudLogs.length > 0) {
+      const seen = new Set(serverLogs.map((l) => l.id));
+      const merged = [...serverLogs];
+      cloudLogs.forEach((cl) => {
+        if (!seen.has(cl.id)) merged.push(cl);
+      });
+      merged.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+      return merged;
+    }
+    return serverLogs;
   },
 };
 

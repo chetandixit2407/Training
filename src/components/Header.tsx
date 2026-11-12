@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { User, Language } from '../types';
 import { speechService } from '../services/speechService';
-import { VolumeX, UserCheck, Shield, Globe, LogOut, CheckCircle2 } from 'lucide-react';
+import { VolumeX, UserCheck, Shield, Globe, Cloud, LogOut } from 'lucide-react';
+import { CloudPhotoService } from '../services/cloudPhotoService';
+import type { User as FirebaseUser } from 'firebase/auth';
 
 interface HeaderProps {
   currentTab: 'training' | 'sops' | 'tasks' | 'history' | 'admin';
@@ -23,13 +25,38 @@ export const Header: React.FC<HeaderProps> = ({
   pendingTasksCount,
 }) => {
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() =>
+    CloudPhotoService.getCurrentFirebaseUser()
+  );
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   useEffect(() => {
     const unsub = speechService.subscribe((state) => {
       setIsSpeaking(state.isSpeaking);
     });
-    return () => unsub();
+    const unsubAuth = CloudPhotoService.onAuthChange((fbUser) => {
+      setFirebaseUser(fbUser);
+    });
+    return () => {
+      unsub();
+      unsubAuth();
+    };
   }, []);
+
+  const handleCloudAuthToggle = async () => {
+    if (firebaseUser) {
+      await CloudPhotoService.signOutGoogle();
+    } else {
+      setIsSigningIn(true);
+      try {
+        await CloudPhotoService.signInWithGoogle();
+      } catch (err) {
+        console.warn('Google sign-in cancelled or failed:', err);
+      } finally {
+        setIsSigningIn(false);
+      }
+    }
+  };
 
   const navItems = [
     {
@@ -124,6 +151,39 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden sm:inline">{language === 'hi' ? 'आवाज़ रोकें' : 'Stop Audio'}</span>
             </button>
           )}
+
+          {/* Cloud Sync / Google Auth Button */}
+          <button
+            onClick={handleCloudAuthToggle}
+            disabled={isSigningIn}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border cursor-pointer min-h-[40px] ${
+              firebaseUser
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                : 'bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100'
+            }`}
+            title={
+              firebaseUser
+                ? `Cloud Synced: ${firebaseUser.email || firebaseUser.displayName || 'Google'} (Click to Sign Out)`
+                : 'Sign in with Google to sync photos to Cloud Storage'
+            }
+          >
+            {firebaseUser ? (
+              <>
+                <Cloud className="w-4 h-4 text-emerald-600" />
+                <span className="hidden lg:inline max-w-[90px] truncate">
+                  {firebaseUser.displayName?.split(' ')[0] || 'Cloud'}
+                </span>
+                <LogOut className="w-3.5 h-3.5 text-emerald-700" />
+              </>
+            ) : (
+              <>
+                <Cloud className="w-4 h-4 text-sky-600" />
+                <span className="hidden lg:inline">
+                  {isSigningIn ? '...' : language === 'hi' ? 'क्लाउड लॉगिन' : 'Cloud Sign-In'}
+                </span>
+              </>
+            )}
+          </button>
 
           {/* Language Switcher */}
           <button

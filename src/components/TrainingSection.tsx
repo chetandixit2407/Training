@@ -5,6 +5,7 @@ import { StorageService, fileToDataUrl, normalizeRoomCategory } from '../service
 import { AITrainingService } from '../services/aiTrainingService';
 import { TaskCompleteModal } from './TaskCompleteModal';
 import { DeletePhotoConfirmModal } from './DeletePhotoConfirmModal';
+import { DateHistoryModal } from './DateHistoryModal';
 import { ReferenceImage } from './ReferenceImage';
 import { DEFAULT_USERS } from '../data/defaultData';
 import {
@@ -35,6 +36,7 @@ import {
   X,
   AlertCircle,
   PlusCircle,
+  History,
 } from 'lucide-react';
 
 interface TrainingSectionProps {
@@ -68,6 +70,7 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
 
   // For Pantry Boy direct room proof upload
   const [proofRoomModal, setProofRoomModal] = useState<VisualGuide | null>(null);
+  const [historyModalRoom, setHistoryModalRoom] = useState<{ roomId: string; roomLabel: string } | null>(null);
 
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   const lightboxReplaceInputRef = useRef<HTMLInputElement>(null);
@@ -762,6 +765,19 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                         <Layers className="w-4 h-4 text-slate-700" />
                         <span>{language === 'hi' ? 'गैलरी देखें' : 'Gallery'}</span>
                       </button>
+
+                      <button
+                        onClick={() =>
+                          setHistoryModalRoom({
+                            roomId: guide.category,
+                            roomLabel: language === 'hi' ? guide.titleHi : guide.titleEn,
+                          })
+                        }
+                        className="py-2.5 px-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer min-h-[42px]"
+                        title={language === 'hi' ? 'दिनांक-वार फोटो इतिहास' : 'Date-Wise Photo History'}
+                      >
+                        <History className="w-4 h-4 text-amber-600" />
+                      </button>
                     </div>
                   ) : (
                     /* PANTRY BOY CONTROLS: Browse Gallery & Upload Cleaning Proof */
@@ -783,6 +799,19 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
                       >
                         <span>{language === 'hi' ? 'सभी फोटो देखें' : 'View Gallery'}</span>
                         <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          setHistoryModalRoom({
+                            roomId: guide.category,
+                            roomLabel: language === 'hi' ? guide.titleHi : guide.titleEn,
+                          })
+                        }
+                        className="py-2.5 px-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer min-h-[42px]"
+                        title={language === 'hi' ? 'दिनांक-वार फोटो इतिहास' : 'Date-Wise Photo History'}
+                      >
+                        <History className="w-4 h-4 text-amber-600" />
                       </button>
                     </div>
                   )}
@@ -1439,6 +1468,23 @@ export const TrainingSection: React.FC<TrainingSectionProps> = ({
         totalPhotos={photoToDelete?.totalPhotos}
         error={deletePhotoError}
       />
+
+      {/* Date-Wise Room Photo History Modal */}
+      {historyModalRoom && (
+        <DateHistoryModal
+          isOpen={true}
+          onClose={() => setHistoryModalRoom(null)}
+          mode="room"
+          roomId={historyModalRoom.roomId}
+          roomLabel={historyModalRoom.roomLabel}
+          currentUser={currentUser}
+          language={language}
+          onDeleted={() => {
+            setRefreshTick((t) => t + 1);
+            onRefreshData?.();
+          }}
+        />
+      )}
 
     </div>
   );

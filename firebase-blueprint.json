@@ -1,0 +1,310 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile with role assignment",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "pantry_boy"]
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        }
+      },
+      "required": ["uid", "email", "displayName", "role", "updatedAt"]
+    },
+    "RoomPhoto": {
+      "title": "RoomPhoto",
+      "description": "Permanent room reference photo metadata with versioned history",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "roomId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "storagePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "captionHi": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "captionEn": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "photoType": {
+          "type": "string",
+          "enum": ["reference", "incorrect"]
+        },
+        "isPrimary": {
+          "type": "boolean"
+        },
+        "isCurrent": {
+          "type": "boolean"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "uploadedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "uploadedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "roomId", "fileName", "storagePath", "assetId", "url", "photoType", "isPrimary", "isCurrent", "uploadedAt", "uploadedBy", "uploadedByUid"]
+    },
+    "TaskProof": {
+      "title": "TaskProof",
+      "description": "Permanent live-camera task completion proof photo with date-wise history",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "roomId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "roomName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "employeeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "employeeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "storagePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "angleLabel": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "isLatest": {
+          "type": "boolean"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "uploadedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "taskId", "taskTitle", "roomId", "roomName", "employeeId", "employeeName", "fileName", "storagePath", "assetId", "url", "isLatest", "uploadedAt", "uploadedByUid"]
+    },
+    "PhotoAsset": {
+      "title": "PhotoAsset",
+      "description": "Cloud-persisted compressed image asset payload",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "contentType": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 50
+        },
+        "dataUrl": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 950000
+        },
+        "storagePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "uploadedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "contentType", "dataUrl", "storagePath", "createdAt", "uploadedByUid"]
+    },
+    "DeletionAuditLog": {
+      "title": "DeletionAuditLog",
+      "description": "Immutable audit log of permanent historical photo deletions",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "targetType": {
+          "type": "string",
+          "enum": ["room_reference", "task_proof"]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "roomId": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "taskId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "storagePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "deletedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "deletedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "deletedAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        }
+      },
+      "required": ["id", "targetType", "targetId", "fileName", "storagePath", "deletedBy", "deletedByUid", "deletedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles keyed by Firebase Auth UID"
+    },
+    "/room_photos/{photoId}": {
+      "schema": { "$ref": "#/entities/RoomPhoto" },
+      "description": "Permanent room reference photos with current/historical flags"
+    },
+    "/task_proofs/{proofId}": {
+      "schema": { "$ref": "#/entities/TaskProof" },
+      "description": "Permanent live-camera task proof photos"
+    },
+    "/photo_assets/{assetId}": {
+      "schema": { "$ref": "#/entities/PhotoAsset" },
+      "description": "Cloud-persisted image binary payloads"
+    },
+    "/deletion_audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/DeletionAuditLog" },
+      "description": "Admin deletion audit trail"
+    }
+  }
+}
